@@ -17,9 +17,10 @@ Conventions:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from .graph import LensConnection
 
@@ -36,7 +37,7 @@ class ToolError(Exception):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _rows(result) -> list[dict]:
@@ -52,7 +53,7 @@ def _rows(result) -> list[dict]:
     out = []
     for row in result.result_set:
         item: dict[str, Any] = {}
-        for name, value in zip(names, row):
+        for name, value in zip(names, row, strict=False):
             if hasattr(value, "properties"):  # Node or Edge
                 item[name] = dict(value.properties)
             else:
@@ -226,7 +227,7 @@ ORDER BY score DESC
 def t_rank_ring_accounts(conn: LensConnection, tenant: str, args: dict) -> dict:
     members = args["member_ids"]
     existing = validate_entities(conn, tenant, members)
-    missing = [m for m, row in zip(members, existing) if not (row["is_account"] or row["is_person"] or row["is_device"])]
+    missing = [m for m, row in zip(members, existing, strict=False) if not (row["is_account"] or row["is_person"] or row["is_device"])]
     if missing:
         raise ToolError("unknown_entity", f"not in graph: {', '.join(missing)}")
     pr = _rows(conn.read(tenant, _Q_PAGERANK_MEMBERS, {"members": members}))
@@ -343,11 +344,12 @@ ORDER BY toInteger(s.order)
 
 
 def t_get_playbook(conn: LensConnection, tenant: str, args: dict) -> dict:
-    rows = _rows(conn.read(tenant, _Q_PLAYBOOK, {"kind": args["playbook"]}))
+    kind = args["playbook"].strip().lower().replace("_", "-")
+    rows = _rows(conn.read(tenant, _Q_PLAYBOOK, {"kind": kind}))
     if not rows:
         raise ToolError("not_in_graph", f"no playbook named {args['playbook']!r} — this alert kind has no SOP yet")
-    return {"data": {"playbook": args["playbook"], "steps": rows},
-            "summary": f"procedural memory: {len(rows)}-step playbook for {args['playbook']}"}
+    return {"data": {"playbook": kind, "steps": rows},
+            "summary": f"procedural memory: {len(rows)}-step playbook for {kind}"}
 
 
 _Q_ALERTS = """
@@ -407,7 +409,6 @@ def t_get_case(conn: LensConnection, tenant: str, args: dict) -> dict:
 
 _Q_CASES = """
 MATCH (c:Case)
-WHERE c.status = $status
 RETURN c.id AS id, c.title AS title, c.status AS status, c.severity AS severity,
        c.opened_at AS opened_at, c.closed_at AS closed_at
 ORDER BY c.opened_at DESC
@@ -415,8 +416,16 @@ ORDER BY c.opened_at DESC
 
 
 def t_list_cases(conn: LensConnection, tenant: str, args: dict) -> dict:
-    rows = _rows(conn.read(tenant, _Q_CASES, {"status": args.get("status", "all")}))
-    return {"data": {"cases": rows}, "summary": f"{len(rows)} case(s) with status {args.get('status', 'all')}"}
+    status = args.get("status", "all")
+    if status and status != "all":
+        rows = _rows(conn.read(tenant,
+                               "MATCH (c:Case) WHERE c.status = $status "
+                               "RETURN c.id AS id, c.title AS title, c.status AS status, c.severity AS severity, "
+                               "c.opened_at AS opened_at, c.closed_at AS closed_at ORDER BY c.opened_at DESC",
+                               {"status": status}))
+    else:
+        rows = _rows(conn.read(tenant, _Q_CASES))
+    return {"data": {"cases": rows}, "summary": f"{len(rows)} case(s) with status {status}"}
 
 
 _Q_STATS_NODES = """

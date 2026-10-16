@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import json
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ledgerlens.graph import connection, tenant_graph_name
@@ -357,7 +357,9 @@ class BankBuilder:
         self.accesses.append((account["id"], fp))
         adr = self.adr(61)
         self.registered_at.append((account["id"], adr))
-        dst = next(a["id"] for a in self.accounts if a["kind"] == "checking" and a["id"] != account["id"])
+        dst = next(a["id"] for a in self.accounts
+                   if a["kind"] == "checking" and a["id"] != account["id"]
+                   and a["id"] != self.acc(1) and a["id"] != self.ring_a["hub"]["id"])
         self._txn(9_999, account["id"], dst, 12_400, self.days_ago(0.8), channel="web")
         self.negative_control = {"account": account["id"], "device": fp}
 
@@ -581,7 +583,7 @@ def main() -> None:
     parser.add_argument("--wipe", action="store_true", help="delete existing tenant graphs first")
     args = parser.parse_args()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     conn = connection()
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     for bank in BANKS:

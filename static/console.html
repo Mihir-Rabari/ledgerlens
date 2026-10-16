@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LedgerLens — fraud-ring investigator</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #121826; --panel2: #0f1420; --line: #1e2740;
+    --text: #dbe4f3; --dim: #8194b5; --faint: #5a6b8a;
+    --accent: #5eead4; --accent2: #38bdf8; --warn: #fbbf24; --bad: #f87171; --good: #34d399;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: rgba(11,14,20,.92); backdrop-filter: blur(6px); z-index: 10; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: .3px; }
+  .logo svg { display: block; }
+  .tagline { color: var(--dim); font-size: 12.5px; }
+  header .spacer { flex: 1; }
+  select, button, input { font: inherit; }
+  select, input { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  button { background: linear-gradient(135deg, #14b8a6, #0ea5e9); color: #04121c; font-weight: 700; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: wait; }
+  button.ghost { background: var(--panel); color: var(--accent); border: 1px solid var(--line); font-weight: 500; }
+  #health { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--good); }
+  main { display: grid; grid-template-columns: 330px 1fr 350px; gap: 16px; padding: 16px 22px; max-width: 1650px; margin: 0 auto; }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .alert-card { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .alert-card .row1 { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .alert-id { font-family: var(--mono); font-size: 12px; color: var(--accent2); }
+  .sev { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .sev.s5, .sev.s4 { background: rgba(248,113,113,.16); color: var(--bad); }
+  .sev.s3 { background: rgba(251,191,36,.16); color: var(--warn); }
+  .sev.s2, .sev.s1 { background: rgba(139,164,199,.14); color: var(--dim); }
+  .alert-kind { color: var(--dim); font-size: 12px; margin-bottom: 6px; font-family: var(--mono); }
+  .alert-summary { color: var(--text); font-size: 13px; margin-bottom: 10px; }
+  .alert-card button { width: 100%; padding: 7px; }
+  .verdict { background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .verdict .head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .agent-name { font-weight: 700; font-size: 13px; }
+  .shape { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 6px; background: rgba(94,234,212,.13); color: var(--accent); }
+  .shape.from_memory { background: rgba(56,189,248,.13); color: var(--accent2); }
+  .shape.not_in_graph { background: rgba(251,191,36,.13); color: var(--warn); }
+  .shape.unknown_entity { background: rgba(139,164,199,.13); color: var(--dim); }
+  .shape.action { background: rgba(52,211,153,.13); color: var(--good); }
+  .conf { color: var(--faint); font-size: 11.5px; }
+  .verdict .body { font-size: 13px; white-space: pre-wrap; }
+  .handoff { display: flex; align-items: center; gap: 8px; color: var(--accent2); font-size: 12px; font-family: var(--mono); margin: -6px 0 12px 4px; }
+  .turn { display: flex; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; align-items: baseline; }
+  .turn:last-child { border-bottom: 0; }
+  .turn .agent { flex: 0 0 130px; font-family: var(--mono); font-size: 11px; color: var(--faint); text-align: right; }
+  .turn .tool { font-family: var(--mono); color: var(--accent2); flex: 0 0 175px; }
+  .turn .summ { color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+  .turn.err .summ, .turn.err .tool { color: var(--warn); }
+  .case-row { padding: 9px 10px; border: 1px solid var(--line); background: var(--panel2); border-radius: 10px; margin-bottom: 9px; cursor: pointer; }
+  .case-row:hover { border-color: var(--accent); }
+  .case-row .t { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+  .case-row .m { color: var(--dim); font-size: 12px; display: flex; gap: 10px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
+  .badge.closed { background: rgba(52,211,153,.13); color: var(--good); }
+  .badge.open { background: rgba(251,191,36,.13); color: var(--warn); }
+  .chatbox { display: flex; gap: 8px; margin-top: 8px; }
+  .chatbox input { flex: 1; }
+  .msg { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 9px; font-size: 13px; }
+  .msg .q { color: var(--dim); font-size: 12px; margin-bottom: 4px; }
+  .graphviz { width: 100%; height: auto; }
+  .legend { display: flex; gap: 12px; color: var(--faint); font-size: 11px; margin-top: 6px; flex-wrap: wrap; }
+  .legend span b { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+  .empty { color: var(--faint); font-size: 12.5px; padding: 18px 0; text-align: center; }
+  .stats { color: var(--dim); font-size: 12px; font-family: var(--mono); line-height: 1.7; }
+  a { color: var(--accent2); }
+  footer { text-align: center; color: var(--faint); font-size: 11.5px; padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+      <circle cx="10" cy="13" r="5.2" stroke="#5eead4" stroke-width="1.6"/>
+      <circle cx="10" cy="13" r="1.8" fill="#5eead4"/>
+      <path d="M14.6 17.2 L21.5 24" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="18.5" cy="8" r="2.1" stroke="#38bdf8" stroke-width="1.4"/>
+      <path d="M13.2 11.4 L17.2 9.2" stroke="#38bdf8" stroke-width="1.2"/>
+    </svg>
+    LedgerLens
+  </div>
+  <div class="tagline">fraud-ring investigator · FalkorDB context layer · every answer shows its path</div>
+  <div class="spacer"></div>
+  <div id="health"><span class="dot" id="hdot"></span><span id="htxt">…</span></div>
+  <select id="tenant"></select>
+</header>
+
+<main>
+  <div class="col">
+    <div class="panel">
+      <h2>Alert queue <span id="alert-count"></span></h2>
+      <div id="alerts"><div class="empty">select a bank…</div></div>
+    </div>
+    <div class="panel">
+      <h2>Tenant graph</h2>
+      <div class="stats" id="stats">…</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>Investigation <span id="inv-status"></span></h2>
+      <div id="investigation"><div class="empty">Pick an alert from the queue — the analyst triages it, hands off to the investigator if evidence warrants, and every step shows the tool path it walked.</div></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>Ask the graph <span style="color:var(--faint);text-transform:none">read-only Q&amp;A, answers carry their shape</span></h2>
+      <div id="chatlog"><div class="empty">e.g. “How is AUR-ACC-0950 connected to AUR-ACC-0963?” or “What do we already know about the ghost device ring?”</div></div>
+      <div class="chatbox">
+        <input id="chat-input" placeholder="Ask about accounts, links, past cases…" autocomplete="off">
+        <button id="chat-send">Ask</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Cases</h2>
+      <div id="cases"><div class="empty">…</div></div>
+    </div>
+    <div class="panel">
+      <h2>Ring view <span style="color:var(--faint);text-transform:none">association graph of involved accounts</span></h2>
+      <div id="ringview" class="empty">appears after an investigation</div>
+      <div class="legend" id="ringlegend" style="display:none">
+        <span><b style="background:var(--good)"></b>active</span>
+        <span><b style="background:var(--bad)"></b>frozen</span>
+        <span><b style="background:var(--faint)"></b>line = shared device / address / owner</span>
+      </div>
+    </div>
+  </div>
+</main>
+<footer>LedgerLens · Graph Hacks 2026 · WeMakeDevs × FalkorDB · Tracks 1 + 2 · synthetic data only</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let TENANT = null;
+let CHAT_SESSION = null;
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.status);
+  return res.json();
+}
+
+function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function shapeBadge(shape) {
+  return `<span class="shape ${esc(shape)}">${esc(shape)}</span>`;
+}
+function sevClass(s) { return 's' + Math.max(1, Math.min(5, s)); }
+
+async function loadHealth() {
+  try {
+    const h = await api('/healthz');
+    $('hdot').className = 'dot' + (h.ok ? ' ok' : '');
+    $('htxt').textContent = h.ok ? `FalkorDB ✓ (${h.tenants.length} tenants) · LLM ${h.llm_configured ? '✓' : '✗'}` : 'FalkorDB down';
+    const sel = $('tenant');
+    sel.innerHTML = (h.tenants || []).map(t => `<option ${t === TENANT ? 'selected' : ''}>${esc(t)}</option>`).join('');
+    if (!TENANT && h.tenants.length) { TENANT = h.tenants[0]; sel.value = TENANT; }
+    if (h.tenants.length) refreshTenant();
+  } catch (e) { $('htxt').textContent = 'offline'; }
+}
+
+function refreshTenant() {
+  loadAlerts(); loadStats(); loadCases();
+}
+
+async function loadStats() {
+  const s = await api(`/api/tenants/${TENANT}/stats`);
+  const nodes = (s.data?.nodes || []).map(n => `${n.label}: ${n.count}`).join('<br>');
+  $('stats').innerHTML = esc(s.summary || '') + '<br><br>' + nodes;
+}
+
+async function loadAlerts() {
+  const r = await api(`/api/tenants/${TENANT}/alerts?status=open`);
+  const wrap = $('alerts');
+  $('alert-count').textContent = r.data.alerts.length + ' open';
+  wrap.innerHTML = '';
+  if (!r.data.alerts.length) { wrap.innerHTML = '<div class="empty">no open alerts</div>'; return; }
+  r.data.alerts.forEach(a => {
+    const card = el(`<div class="alert-card">
+      <div class="row1"><span class="alert-id">${esc(a.id)}</span><span class="sev ${sevClass(a.severity)}">sev ${a.severity}</span></div>
+      <div class="alert-kind">${esc(a.kind)} · ${esc(a.account)} (${esc(a.account_name)}) · ${esc((a.amount||0).toLocaleString())}</div>
+      <div class="alert-summary">${esc(a.summary)}</div>
+      <button onclick="investigate('${esc(a.id)}', this)">Investigate</button>
+    </div>`);
+    wrap.appendChild(card);
+  });
+}
+
+async function loadCases() {
+  const r = await api(`/api/tenants/${TENANT}/cases`);
+  const wrap = $('cases');
+  wrap.innerHTML = '';
+  if (!r.data.cases.length) { wrap.innerHTML = '<div class="empty">no cases yet</div>'; return; }
+  r.data.cases.slice(0, 12).forEach(c => {
+    const row = el(`<div class="case-row" onclick="openCase('${esc(c.id)}')">
+      <div class="t">${esc(c.title)}</div>
+      <div class="m"><span>${esc(c.id)}</span><span class="badge ${esc(c.status)}">${esc(c.status)}</span><span>sev ${c.severity}</span></div>
+    </div>`);
+    wrap.appendChild(row);
+  });
+}
+
+async function openCase(id) {
+  const r = await api(`/api/tenants/${TENANT}/case/${id}`);
+  const d = r.data;
+  const div = el(`<div class="msg"><div class="q">${esc(d.id)} · ${esc(d.title)} <span class="badge ${esc(d.status)}">${esc(d.status)}</span></div>
+    <div><b>Outcome:</b> ${esc(d.outcome || '—')}</div>
+    <div style="margin-top:6px;color:var(--dim)"><b>Findings:</b><br>${(d.findings||[]).map(f => '· ' + esc(f.text)).join('<br>') || '—'}</div>
+    <div style="margin-top:6px;color:var(--dim)"><b>Actions:</b><br>${(d.actions||[]).map(a => `· ${esc(a.kind)} @ ${esc(a.at)} — ${esc(a.reason||'')}`).join('<br>') || '—'}</div>
+  </div>`);
+  $('chatlog').prepend(div);
+}
+
+async function investigate(alertId, btn) {
+  if (btn) btn.disabled = true;
+  $('inv-status').textContent = '· running…';
+  $('investigation').innerHTML = '<div class="empty">Analyst walking the graph…</div>';
+  try {
+    const r = await api(`/api/tenants/${TENANT}/investigate`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({alert_id: alertId}),
+    });
+    renderInvestigation(r);
+  } catch (e) {
+    $('investigation').innerHTML = `<div class="empty">investigation failed: ${esc(e.message)}</div>`;
+  }
+  if (btn) btn.disabled = false;
+  $('inv-status').textContent = '';
+  loadAlerts(); loadCases();
+}
+
+function renderInvestigation(r) {
+  const box = $('investigation');
+  box.innerHTML = '';
+  if (r.analyst_final) {
+    box.appendChild(el(`<div class="verdict">
+      <div class="head"><span class="agent-name">intake-analyst</span>${shapeBadge(r.analyst_final.shape)}
+        <span class="conf">confidence ${esc(r.analyst_final.confidence)} · verdict ${esc(r.analyst_final.verdict || '—')}</span></div>
+      <div class="body">${esc(r.analyst_final.summary || '')}</div></div>`));
+  }
+  if (r.handoff) {
+    box.appendChild(el(`<div class="handoff">↳ HANDS_OFF ${esc(r.analyst_session_id)} → ${esc(r.investigator_session_id)} · case ${esc(r.case_id)}</div>`));
+  }
+  if (r.investigator_final) {
+    box.appendChild(el(`<div class="verdict" style="border-left-color:var(--accent2)">
+      <div class="head"><span class="agent-name">case-investigator</span>${shapeBadge(r.investigator_final.shape)}
+        <span class="conf">confidence ${esc(r.investigator_final.confidence)} · verdict ${esc(r.investigator_final.verdict || '—')}</span></div>
+      <div class="body">${esc(r.investigator_final.summary || '')}</div></div>`));
+  }
+  if (r.turns && r.turns.length) {
+    const trail = el('<div></div>');
+    r.turns.forEach(t => {
+      trail.appendChild(el(`<div class="turn ${t.ok ? '' : 'err'}">
+        <span class="agent">${esc(t.agent)}</span><span class="tool">${t.ok ? '✓' : '✗'} ${esc(t.tool)}</span>
+        <span class="summ">${esc(t.summary || '')}</span></div>`));
+    });
+    const wrap = el('<div class="panel" style="background:var(--panel2);padding:6px 4px;margin-top:10px"></div>');
+    const h = el('<div class="turn"><span class="agent" style="color:var(--dim)">evidence trail</span><span class="tool" style="color:var(--dim)">tool</span><span class="summ" style="color:var(--dim)">result</span></div>');
+    wrap.appendChild(h); wrap.appendChild(trail);
+    box.appendChild(wrap);
+  }
+  loadRing(r);
+}
+
+async function loadRing(r) {
+  const ids = new Set();
+  (r.turns || []).forEach(t => {
+    if (t.tool === 'find_rings') return;
+    if (t.tool === 'freeze_account') ids.add(t.arguments.account_id);
+    if (t.tool === 'open_case') (t.arguments.account_ids || []).forEach(i => ids.add(i));
+    if (t.tool === 'get_account_profile') ids.add(t.arguments.account_id);
+  });
+  // include the biggest component found during the investigation
+  (r.turns || []).forEach(t => {
+    if (t.tool === 'find_rings' && t.data && t.data.components) {
+      const best = t.data.components.slice().sort((a, b) => b.internal_transfer_edges - a.internal_transfer_edges)[0];
+      if (best) best.member_ids.forEach(i => ids.add(i));
+    }
+  });
+  if (!ids.size) return;
+  const g = await api(`/api/tenants/${TENANT}/graph?ids=${encodeURIComponent([...ids].join(','))}`);
+  drawRing(g.data);
+}
+
+function drawRing(data) {
+  const nodes = data.nodes, edges = data.edges;
+  if (!nodes.length) return;
+  const W = 320, H = 250, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 34;
+  nodes.forEach((n, i) => {
+    const a = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+    n.x = cx + R * Math.cos(a); n.y = cy + R * Math.sin(a);
+  });
+  const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const lines = edges.filter(e => byId[e.source] && byId[e.target])
+    .map(e => `<line x1="${byId[e.source].x}" y1="${byId[e.source].y}" x2="${byId[e.target].x}" y2="${byId[e.target].y}" stroke="#5a6b8a" stroke-width="1" opacity=".55"/>`).join('');
+  const circles = nodes.map(n => `
+    <circle cx="${n.x}" cy="${n.y}" r="13" fill="${n.status === 'frozen' ? '#f87171' : '#34d399'}" stroke="#0b0e14" stroke-width="2"/>
+    <text x="${n.x}" y="${n.y + 28}" text-anchor="middle" fill="#8194b5" font-size="9" font-family="ui-monospace,monospace">${n.id.slice(-4)}</text>`).join('');
+  $('ringview').innerHTML = `<svg class="graphviz" viewBox="0 0 ${W} ${H}">${lines}${circles}</svg>`;
+  $('ringlegend').style.display = 'flex';
+}
+
+async function ask() {
+  const input = $('chat-input');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  const holder = el(`<div class="msg"><div class="q">you asked: ${esc(q)}</div><div class="empty" style="padding:6px 0">walking the graph…</div></div>`);
+  $('chatlog').prepend(holder);
+  try {
+    const r = await api(`/api/tenants/${TENANT}/ask`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: q, session_id: CHAT_SESSION}),
+    });
+    CHAT_SESSION = r.session_id;
+    const a = r.answer || {};
+    const turns = (r.turns || []).map(t => `<div class="turn ${t.ok ? '' : 'err'}"><span class="tool" style="flex:0 0 175px">${t.ok ? '✓' : '✗'} ${esc(t.tool)}</span><span class="summ">${esc(t.summary || '')}</span></div>`).join('');
+    holder.innerHTML = `<div class="q">you asked: ${esc(q)}</div>
+      <div>${shapeBadge(a.shape || 'not_in_graph')} <span class="conf">confidence ${esc(a.confidence ?? '—')}</span></div>
+      <div style="margin-top:6px">${esc(a.summary || r.answer_text || '')}</div>
+      ${turns ? `<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px">${turns}</div>` : ''}`;
+  } catch (e) {
+    holder.innerHTML = `<div class="q">you asked: ${esc(q)}</div><div style="color:var(--bad)">failed: ${esc(e.message)}</div>`;
+  }
+}
+
+$('chat-send').onclick = ask;
+$('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+$('tenant').addEventListener('change', e => { TENANT = e.target.value; CHAT_SESSION = null; refreshTenant(); });
+
+loadHealth();
+setInterval(loadHealth, 30000);
+</script>
+</body>
+</html>

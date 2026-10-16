@@ -1,0 +1,41 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: ledgerlens-db
+    restart: unless-stopped
+    volumes:
+      - falkordb-data:/data
+    networks:
+      - default
+    # No host ports: the app reaches FalkorDB over the internal network, and
+    # the public surface is only the FastAPI app behind the reverse proxy.
+
+  app:
+    build: .
+    container_name: ledgerlens-app
+    restart: unless-stopped
+    depends_on:
+      - falkordb
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+    command: >
+      sh -c "python -c 'from ledgerlens.graph import connection; assert not connection().list_tenants(), \"tenants already seeded\"' 2>/dev/null
+             || python seed.py;
+             python -c 'from ledgerlens.graph import connection; from ledgerlens.model import BANKS; missing=[b[\"slug\"] for b in BANKS if b[\"slug\"] not in connection().list_tenants()]; exit(1 if missing else 0)'
+             && python seed.py --tenants $$(python -c 'from ledgerlens.model import BANKS; print(\" \".join(b[\"slug\"] for b in BANKS))') || true;
+             uvicorn app:app --host 0.0.0.0 --port 8000"
+    networks:
+      - default
+      - dokploy-network
+
+networks:
+  default:
+  dokploy-network:
+    external: true
+
+volumes:
+  falkordb-data:
