@@ -6,6 +6,7 @@ COPY pyproject.toml README.md LICENSE ./
 COPY ledgerlens ./ledgerlens
 COPY static ./static
 COPY seed.py app.py ./
+COPY scripts/seed_if_needed.py ./scripts/seed_if_needed.py
 
 RUN pip install --no-cache-dir .
 

@@ -23,10 +23,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
     command: >
-      sh -c "python -c 'from ledgerlens.graph import connection; assert not connection().list_tenants(), \"tenants already seeded\"' 2>/dev/null
-             || python seed.py;
-             python -c 'from ledgerlens.graph import connection; from ledgerlens.model import BANKS; missing=[b[\"slug\"] for b in BANKS if b[\"slug\"] not in connection().list_tenants()]; exit(1 if missing else 0)'
-             && python seed.py --tenants $$(python -c 'from ledgerlens.model import BANKS; print(\" \".join(b[\"slug\"] for b in BANKS))') || true;
+      sh -c "python scripts/seed_if_needed.py &&
              uvicorn app:app --host 0.0.0.0 --port 8000"
     networks:
       - default
