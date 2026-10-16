@@ -59,3 +59,30 @@ def test_freeze_is_audited(seeded, truth_verdant):
     assert freeze["ok"]
     profile = run_tool(seeded, "verdant", "get_account_profile", {"account_id": hub})
     assert profile["ok"] and profile["data"]["status"] == "frozen"
+
+
+def test_no_case_conclusion_is_recallable_memory(seeded, truth_aurora):
+    """A cleared alert must persist as semantic memory — discipline is memory too.
+
+    Without this, the graph only remembers the cases we opened, never the ones
+    we rightly refused, and a future session would see the alert as unexamined.
+    """
+    from ledgerlens.agents import _persist_no_case_finding
+
+    alerts = run_tool(seeded, "aurora", "list_alerts", {"status": "open"})["data"]["alerts"]
+    neg_alert = next(a for a in alerts if a["account"] == truth_aurora["negative_control"])
+
+    _persist_no_case_finding(seeded, "aurora", neg_alert["id"],
+                             truth_aurora["negative_control"], "SES-TEST-NOCASE",
+                             {"verdict": "no_case", "confidence": 0.88,
+                              "summary": "legitimate isolated account — no action taken"})
+
+    recall = run_tool(seeded, "aurora", "search_memory", {"text": neg_alert["id"]})
+    assert recall["ok"]
+    texts = [f["text"] for f in recall["data"]["findings"]]
+    assert any(neg_alert["id"] in t and "no_case" in t for t in texts), \
+        "future sessions must recall that this alert was examined and cleared"
+    # the clearance must also surface from the account side
+    by_account = run_tool(seeded, "aurora", "search_memory",
+                          {"text": truth_aurora["negative_control"]})
+    assert any("no_case" in f["text"] for f in by_account["data"]["findings"])

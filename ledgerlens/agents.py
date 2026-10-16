@@ -167,6 +167,38 @@ def _persist_turn(conn: LensConnection, tenant: str, session_id: str, agent: str
         pass  # message persistence must never kill an investigation
 
 
+def _persist_no_case_finding(conn: LensConnection, tenant: str, alert_id: str,
+                             account_id: str | None, session_id: str, verdict: dict) -> None:
+    """Record a no_case conclusion as semantic memory: the alert was examined and cleared.
+
+    Links the finding to the analyst session (who produced it) and to the alert's
+    account, so 'what do we know about <account>' recalls the clearance.
+    """
+    try:
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        finding_id = f"FIND-{uuid.uuid4().hex[:10].upper()}"
+        summary = str(verdict.get("summary") or "no case — legitimate activity")[:400]
+        text = (f"Alert {alert_id}" + (f" (account {account_id})" if account_id else "")
+                + f" examined — verdict no_case: {summary}")
+        conn.write(tenant,
+                   "CREATE (f:Finding {id: $id, text: $text, at: $now, "
+                   "confidence: $conf, source: $src})",
+                   {"id": finding_id, "text": text, "now": now,
+                    "conf": float(verdict.get("confidence") or 0.0),
+                    "src": f"intake-analyst session {session_id}"})
+        conn.write(tenant,
+                   "MATCH (s:Session {id: $s}), (f:Finding {id: $f}) "
+                   "CREATE (s)-[:PRODUCED]->(f)",
+                   {"s": session_id, "f": finding_id})
+        if account_id:
+            conn.write(tenant,
+                       "MATCH (a:Account {id: $a}), (f:Finding {id: $f}) "
+                       "CREATE (f)-[:ABOUT]->(a)",
+                       {"a": account_id, "f": finding_id})
+    except Exception:
+        pass  # a failed memory write must never mask the no_case verdict itself
+
+
 def _run_agent_loop(conn: LensConnection, tenant: str, agent_name: str, allowed: list[str],
                     messages: list[dict], result: InvestigationResult) -> tuple[str, list[dict]]:
     """Run one agent to completion: tool-call rounds until a final message."""
@@ -365,6 +397,12 @@ def investigate_alert(conn: LensConnection, tenant: str, alert_id: str) -> Inves
     if not case_id:
         result.analyst_final = analyst_final or {"shape": "not_in_graph", "verdict": "no_case",
                                                  "confidence": 0.0, "summary": final_text[:500]}
+        if result.analyst_final.get("verdict") == "no_case":
+            # discipline is memory too: a cleared alert must be recallable so future
+            # sessions know it was already examined — otherwise the graph only
+            # remembers the cases we opened, never the ones we rightly refused
+            _persist_no_case_finding(conn, tenant, alert_id, alert["data"].get("account"),
+                                     analyst_session, result.analyst_final)
         return result
 
     result.case_id = case_id
