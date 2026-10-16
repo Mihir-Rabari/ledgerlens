@@ -116,6 +116,39 @@ RETURN a.id AS id, a.name AS name, a.kind AS kind, a.kyc_risk AS kyc_risk, a.sta
 """
 
 
+_Q_POLICIES = """
+MATCH (d:PolicyDoc)-[:HAS_CHUNK]->(c:PolicyChunk)
+WHERE c.id IN $ids
+RETURN d.id AS policy, d.title AS title, d.version AS version, d.effective AS effective,
+       c.id AS chunk, c.idx AS idx, c.text AS text
+ORDER BY d.id, toInteger(c.idx)
+"""
+
+
+def t_get_policy_chunks(conn: LensConnection, tenant: str, args: dict) -> dict:
+    """Fetch policy chunks by id (for citing a rule the agent must follow)."""
+    rows = _rows(conn.read(tenant, _Q_POLICIES, {"ids": args["chunk_ids"]}))
+    return {"data": {"chunks": rows},
+            "summary": f"{len(rows)} policy section(s): "
+                       + ", ".join(sorted({r['chunk'] for r in rows}))}
+
+
+def t_search_policies(conn: LensConnection, tenant: str, args: dict) -> dict:
+    """Company knowledge search: compliance policies by keyword. Answers cite
+    the policy id, version and effective date."""
+    rows = _rows(conn.read(tenant, _Q_FT_POLICY, {"text": args["text"]}))
+    return {"data": {"sections": rows},
+            "summary": f"policy recall for {args['text']!r}: {len(rows)} section(s)"}
+
+
+_Q_FT_POLICY = """
+CALL db.idx.fulltext.queryNodes('PolicyChunk', $text) YIELD node
+MATCH (d:PolicyDoc)-[:HAS_CHUNK]->(node)
+RETURN d.id AS policy, d.title AS title, d.version AS version, d.effective AS effective,
+       node.id AS chunk, node.idx AS idx, node.text AS text
+"""
+
+
 def t_account_profile(conn: LensConnection, tenant: str, args: dict) -> dict:
     require_account(conn, tenant, args["account_id"])
     rows = _rows(conn.read(tenant, _Q_PROFILE, {"id": args["account_id"]}))
@@ -338,7 +371,8 @@ def t_search_memory(conn: LensConnection, tenant: str, args: dict) -> dict:
 
 _Q_PLAYBOOK = """
 MATCH (p:Playbook {kind: $kind})-[:STEP]->(s:PlaybookStep)
-RETURN s.order AS step, s.action AS action, s.instruction AS instruction
+RETURN s.order AS step, s.action AS action, s.instruction AS instruction,
+       s.source AS source, s.learned_at AS learned_at
 ORDER BY toInteger(s.order)
 """
 
@@ -453,22 +487,36 @@ UNWIND $members AS mid
 MATCH (a:Account {id: mid})
 OPTIONAL MATCH (a)-[l:LINKED_TO]-(b:Account)
 WHERE b.id IN $members
+WITH a, collect(DISTINCT {id: b.id, via: l.via, via_id: l.via_id}) AS assoc,
+     [x IN collect(DISTINCT b.id) WHERE x IS NOT NULL] AS assoc_ids
+OPTIONAL MATCH (a)-[t:TRANSFER]->(m:Account)
+WHERE m.id IN $members
+WITH a, assoc, assoc_ids,
+     collect(DISTINCT {id: m.id, amount: t.amount, count: t.count}) AS transfers_out
 RETURN a.id AS account, a.name AS name, a.status AS status,
-       collect(DISTINCT {id: b.id, via: l.via, via_id: l.via_id}) AS assoc,
-       [x IN collect(DISTINCT b.id) WHERE x IS NOT NULL] AS assoc_ids
+       [x IN assoc WHERE x.id IS NOT NULL] AS assoc,
+       assoc_ids,
+       [x IN transfers_out WHERE x.id IS NOT NULL] AS transfers_out
 """
 
 
 def t_component_graph(conn: LensConnection, tenant: str, args: dict) -> dict:
-    """Adjacency for the console's ring visualiser."""
+    """Adjacency for the console's ring visualiser: association edges plus
+    internal money-flow edges."""
     members = args["member_ids"]
     rows = _rows(conn.read(tenant, _Q_COMPONENT_ADJ, {"members": members}))
     nodes = [{"id": r["account"], "name": r["name"], "status": r["status"]} for r in rows]
     edges = []
+    transfers = []
     for r in rows:
         for other in r["assoc_ids"]:
             edges.append({"source": r["account"], "target": other})
-    return {"data": {"nodes": nodes, "edges": edges}, "summary": f"component adjacency for {len(nodes)} accounts"}
+        for t in r["transfers_out"]:
+            transfers.append({"source": r["account"], "target": t["id"],
+                              "amount": t["amount"], "count": t["count"]})
+    return {"data": {"nodes": nodes, "edges": edges, "transfers": transfers},
+            "summary": f"component adjacency for {len(nodes)} accounts "
+                       f"({len(edges)} associations, {len(transfers)} internal money edges)"}
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +553,9 @@ def t_add_finding(conn: LensConnection, tenant: str, args: dict) -> dict:
                {"id": finding_id, "text": args["text"], "now": now,
                 "confidence": args.get("confidence", 0.7), "source": args.get("source", "live investigation")})
     conn.write(tenant, "MATCH (c:Case {id: $cid}), (f:Finding {id: $fid}) CREATE (c)-[:HAS_FINDING]->(f)",
+               {"cid": args["case_id"], "fid": finding_id})
+    conn.write(tenant, "MATCH (c:Case {id: $cid})-[:OPENED_IN]->(s:Session), (f:Finding {id: $fid}) "
+                       "CREATE (s)-[:PRODUCED]->(f)",
                {"cid": args["case_id"], "fid": finding_id})
     if args.get("about_account_ids"):
         conn.write(tenant, "UNWIND $rows AS r MATCH (f:Finding {id: $fid}), (a:Account {id: r.a}) "
@@ -557,6 +608,35 @@ def t_close_case(conn: LensConnection, tenant: str, args: dict) -> dict:
             "summary": f"closed case {args['case_id']}: {args['outcome']}"}
 
 
+_Q_PLAYBOOK_APPEND = """
+MATCH (p:Playbook {kind: $kind})
+MATCH (c:Case {id: $case_id})
+OPTIONAL MATCH (p)-[:STEP]->(s:PlaybookStep)
+WITH p, c, coalesce(max(toInteger(s.order)), 0) AS highest
+CREATE (step:PlaybookStep {order: highest + 1, action: 'learned', instruction: $text, source: $case_id, learned_at: $now})
+CREATE (p)-[:STEP]->(step)
+CREATE (step)-[:LEARNED_IN]->(c)
+RETURN step.order AS order, step.instruction AS instruction
+"""
+
+
+def t_learn_lesson(conn: LensConnection, tenant: str, args: dict) -> dict:
+    """Procedural memory evolution: append a learned step to a playbook, sourced
+    to the case that taught it. Future investigations will follow it."""
+    now = _now()
+    case = _rows(conn.read(tenant, "MATCH (c:Case {id: $id}) RETURN c.id AS id", {"id": args["case_id"]}))
+    if not case:
+        raise ToolError("unknown_entity", f"case {args['case_id']!r} does not exist")
+    kind = args["playbook"].strip().lower().replace("_", "-")
+    rows = _rows(conn.write(tenant, _Q_PLAYBOOK_APPEND,
+                            {"kind": kind, "case_id": args["case_id"], "text": args["text"], "now": now}))
+    if not rows:
+        raise ToolError("not_in_graph", f"no playbook named {args['playbook']!r} to learn into")
+    return {"data": {"playbook": kind, "step": rows[0], "source_case": args["case_id"]},
+            "summary": f"learned a new playbook step for {kind}: {args['text'][:80]}"
+                       f" (sourced to case {args['case_id']})"}
+
+
 def t_record_message(conn: LensConnection, tenant: str, args: dict) -> dict:
     """Persist a conversation turn as an episodic-memory node (chain per session)."""
     now = _now()
@@ -570,6 +650,29 @@ def t_record_message(conn: LensConnection, tenant: str, args: dict) -> dict:
                        "CREATE (prev)-[:NEXT]->(m:Message {id: $mid})",
                {"sid": args["session_id"], "mid": msg_id})
     return {"data": {"message_id": msg_id}, "summary": f"persisted {args['role']} turn to session {args['session_id']}"}
+
+
+_Q_SESSIONS = """
+MATCH (s:Session)
+OPTIONAL MATCH (prev:Session)-[:HANDS_OFF]->(s)
+OPTIONAL MATCH (s)-[:PRODUCED]->(f:Finding)
+OPTIONAL MATCH (s)<-[:SAID_IN]-(m:Message)
+RETURN s.id AS id, s.agent AS agent, s.started_at AS started_at,
+       collect(DISTINCT prev.id) AS handed_from,
+       count(DISTINCT f) AS findings,
+       count(m) AS messages
+ORDER BY s.started_at DESC
+LIMIT 30
+"""
+
+
+def t_list_sessions(conn: LensConnection, tenant: str, args: dict) -> dict:
+    """Episodic memory timeline: sessions, who handed off to whom, what each
+    session produced and said. This is the multi-agent coordination picture."""
+    rows = _rows(conn.read(tenant, _Q_SESSIONS))
+    return {"data": {"sessions": rows},
+            "summary": f"{len(rows)} session(s); "
+                       + str(sum(1 for r in rows if r["handed_from"])) + " received a handoff"}
 
 
 # ---------------------------------------------------------------------------
@@ -672,6 +775,24 @@ _register(
 )(t_search_memory)
 
 _register(
+    "search_policies",
+    "Search the bank's compliance policies (company knowledge in the graph): thresholds, "
+    "device rules, freeze authority. Multi-word queries need every word present — prefer "
+    "one or two strong keywords ('freeze', 'structuring', 'device'). "
+    "Cite the section id (e.g. POL-31-C01) in conclusions.",
+    "read",
+    {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+)(t_search_policies)
+
+_register(
+    "get_policy_chunks",
+    "Fetch policy sections by chunk id (e.g. ['POL-31-C01', 'POL-22-C02']) to quote exactly.",
+    "read",
+    {"type": "object", "properties": {"chunk_ids": {"type": "array", "items": {"type": "string"}}},
+     "required": ["chunk_ids"]},
+)(t_get_policy_chunks)
+
+_register(
     "get_playbook",
     "Get the procedural-memory playbook (SOP steps) for this alert kind, e.g. 'shared-device', 'structuring', 'rapid-velocity'.",
     "read",
@@ -705,6 +826,13 @@ _register(
     "read",
     {"type": "object", "properties": {"status": {"type": "string", "default": "all"}}, "required": []},
 )(t_list_cases)
+
+_register(
+    "list_sessions",
+    "Episodic memory timeline: sessions with agents, handoffs received, findings produced, message counts.",
+    "read",
+    {"type": "object", "properties": {}, "required": []},
+)(t_list_sessions)
 
 _register(
     "graph_stats",
@@ -770,6 +898,19 @@ _register(
     {"type": "object", "properties": {"case_id": {"type": "string"}, "outcome": {"type": "string"}},
      "required": ["case_id", "outcome"]},
 )(t_close_case)
+
+_register(
+    "learn_lesson",
+    "Append a lesson learned to a playbook (procedural memory evolution). The step is "
+    "sourced to the case that taught it and every future investigation will follow it. "
+    "Use when closing a case taught you something the playbook lacked.",
+    "write",
+    {"type": "object",
+     "properties": {"case_id": {"type": "string"},
+                    "playbook": {"type": "string", "description": "playbook kind, e.g. 'rapid-velocity'"},
+                    "text": {"type": "string", "description": "the step, written as an instruction"}},
+     "required": ["case_id", "playbook", "text"]},
+)(t_learn_lesson)
 
 _register(
     "record_message",

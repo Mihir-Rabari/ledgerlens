@@ -37,7 +37,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ledgerlens.graph import connection, tenant_graph_name
-from ledgerlens.model import BANKS, PLAYBOOKS
+from ledgerlens.model import BANKS, PLAYBOOKS, POLICY_DOCS
 
 SEED = 20261016
 STRUCTURE_THRESHOLD = 10_000
@@ -562,6 +562,17 @@ def load_bank(conn, tenant: str, b: BankBuilder) -> None:
     run("CALL db.idx.fulltext.createNodeIndex('Case', 'outcome')")
     run("CALL db.idx.fulltext.createNodeIndex('Alert', 'summary')")
     run("CALL db.idx.fulltext.createNodeIndex('Account', 'name')")
+    run("CALL db.idx.fulltext.createNodeIndex('PolicyChunk', 'text')")
+    for doc in POLICY_DOCS:
+        run("MATCH (b:Bank {name: $bank}) CREATE (d:PolicyDoc {id: $id, title: $title, "
+            "version: $version, effective: $effective}) CREATE (b)-[:GOVERNED_BY]->(d)",
+            {"bank": b.bank["name"], "id": doc["id"], "title": doc["title"],
+             "version": doc["version"], "effective": doc["effective"]})
+        for idx, text in enumerate(doc["chunks"], 1):
+            run("MATCH (d:PolicyDoc {id: $doc}) "
+                "CREATE (c:PolicyChunk {id: $cid, idx: $idx, text: $text}) "
+                "CREATE (d)-[:HAS_CHUNK]->(c)",
+                {"doc": doc["id"], "cid": f"{doc['id']}-C{idx:02d}", "idx": str(idx), "text": text})
 
 
 def build_bank_data(bank: dict, now: datetime) -> BankBuilder:

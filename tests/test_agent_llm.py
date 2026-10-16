@@ -40,6 +40,19 @@ def test_ring_recurrence_investigation(seeded, truth_aurora):
     assert case["ok"] and case["data"]["findings"], "investigator must record findings for future sessions"
     assert case["data"]["status"] == "closed", "investigator must close the case with an outcome"
 
+    # procedural memory evolution: the investigation must leave the playbook smarter
+    assert any(t.tool == "learn_lesson" and t.ok for t in result.turns), \
+        "investigator must record what the case taught it"
+    pb = run_tool(seeded, "aurora", "get_playbook", {"playbook": "rapid-velocity"})
+    learned = [s for s in pb["data"]["steps"] if s.get("source") == result.case_id]
+    assert learned, "the new playbook step must be sourced to the case"
+
+    # coordination state: the handoff must appear in the episodic timeline
+    sessions = run_tool(seeded, "aurora", "list_sessions", {})
+    handed = [s for s in sessions["data"]["sessions"] if s["id"] == result.investigator_session_id]
+    assert handed and handed[0]["handed_from"] == [result.analyst_session_id], \
+        "the HANDS_OFF edge must be queryable in the session timeline"
+
 
 def test_negative_control_is_not_acted_on(seeded, truth_aurora):
     from ledgerlens.agents import investigate_alert

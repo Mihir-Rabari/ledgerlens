@@ -175,6 +175,33 @@ CALL db.idx.fulltext.queryNodes('Case', $text) YIELD node RETURN node.id AS id, 
 CALL db.idx.fulltext.queryNodes('Alert', $text) YIELD node RETURN node.id AS id, node.summary AS summary, node.status AS status, node.at AS at
 ```
 
+## `search_policies` (read)
+
+Search the bank's compliance policies (company knowledge in the graph): thresholds, device rules, freeze authority. Multi-word queries need every word present — prefer one or two strong keywords ('freeze', 'structuring', 'device'). Cite the section id (e.g. POL-31-C01) in conclusions.
+
+**_Q_FT_POLICY**
+
+```cypher
+CALL db.idx.fulltext.queryNodes('PolicyChunk', $text) YIELD node
+MATCH (d:PolicyDoc)-[:HAS_CHUNK]->(node)
+RETURN d.id AS policy, d.title AS title, d.version AS version, d.effective AS effective,
+       node.id AS chunk, node.idx AS idx, node.text AS text
+```
+
+## `get_policy_chunks` (read)
+
+Fetch policy sections by chunk id (e.g. ['POL-31-C01', 'POL-22-C02']) to quote exactly.
+
+**_Q_POLICIES**
+
+```cypher
+MATCH (d:PolicyDoc)-[:HAS_CHUNK]->(c:PolicyChunk)
+WHERE c.id IN $ids
+RETURN d.id AS policy, d.title AS title, d.version AS version, d.effective AS effective,
+       c.id AS chunk, c.idx AS idx, c.text AS text
+ORDER BY d.id, toInteger(c.idx)
+```
+
 ## `get_playbook` (read)
 
 Get the procedural-memory playbook (SOP steps) for this alert kind, e.g. 'shared-device', 'structuring', 'rapid-velocity'.
@@ -183,7 +210,8 @@ Get the procedural-memory playbook (SOP steps) for this alert kind, e.g. 'shared
 
 ```cypher
 MATCH (p:Playbook {kind: $kind})-[:STEP]->(s:PlaybookStep)
-RETURN s.order AS step, s.action AS action, s.instruction AS instruction
+RETURN s.order AS step, s.action AS action, s.instruction AS instruction,
+       s.source AS source, s.learned_at AS learned_at
 ORDER BY toInteger(s.order)
 ```
 
@@ -247,6 +275,25 @@ RETURN c.id AS id, c.title AS title, c.status AS status, c.severity AS severity,
 ORDER BY c.opened_at DESC
 ```
 
+## `list_sessions` (read)
+
+Episodic memory timeline: sessions with agents, handoffs received, findings produced, message counts.
+
+**_Q_SESSIONS**
+
+```cypher
+MATCH (s:Session)
+OPTIONAL MATCH (prev:Session)-[:HANDS_OFF]->(s)
+OPTIONAL MATCH (s)-[:PRODUCED]->(f:Finding)
+OPTIONAL MATCH (s)<-[:SAID_IN]-(m:Message)
+RETURN s.id AS id, s.agent AS agent, s.started_at AS started_at,
+       collect(DISTINCT prev.id) AS handed_from,
+       count(DISTINCT f) AS findings,
+       count(m) AS messages
+ORDER BY s.started_at DESC
+LIMIT 30
+```
+
 ## `graph_stats` (read)
 
 Node and edge counts for this tenant's graph.
@@ -278,9 +325,16 @@ UNWIND $members AS mid
 MATCH (a:Account {id: mid})
 OPTIONAL MATCH (a)-[l:LINKED_TO]-(b:Account)
 WHERE b.id IN $members
+WITH a, collect(DISTINCT {id: b.id, via: l.via, via_id: l.via_id}) AS assoc,
+     [x IN collect(DISTINCT b.id) WHERE x IS NOT NULL] AS assoc_ids
+OPTIONAL MATCH (a)-[t:TRANSFER]->(m:Account)
+WHERE m.id IN $members
+WITH a, assoc, assoc_ids,
+     collect(DISTINCT {id: m.id, amount: t.amount, count: t.count}) AS transfers_out
 RETURN a.id AS account, a.name AS name, a.status AS status,
-       collect(DISTINCT {id: b.id, via: l.via, via_id: l.via_id}) AS assoc,
-       [x IN collect(DISTINCT b.id) WHERE x IS NOT NULL] AS assoc_ids
+       [x IN assoc WHERE x.id IS NOT NULL] AS assoc,
+       assoc_ids,
+       [x IN transfers_out WHERE x.id IS NOT NULL] AS transfers_out
 ```
 
 ## `open_case` (write)
@@ -312,6 +366,23 @@ _(query composed inline — see the handler source in `ledgerlens/tools.py`)_
 Close a case with an outcome text. The outcome becomes searchable memory.
 
 _(query composed inline — see the handler source in `ledgerlens/tools.py`)_
+
+## `learn_lesson` (write)
+
+Append a lesson learned to a playbook (procedural memory evolution). The step is sourced to the case that taught it and every future investigation will follow it. Use when closing a case taught you something the playbook lacked.
+
+**_Q_PLAYBOOK_APPEND**
+
+```cypher
+MATCH (p:Playbook {kind: $kind})
+MATCH (c:Case {id: $case_id})
+OPTIONAL MATCH (p)-[:STEP]->(s:PlaybookStep)
+WITH p, c, coalesce(max(toInteger(s.order)), 0) AS highest
+CREATE (step:PlaybookStep {order: highest + 1, action: 'learned', instruction: $text, source: $case_id, learned_at: $now})
+CREATE (p)-[:STEP]->(step)
+CREATE (step)-[:LEARNED_IN]->(c)
+RETURN step.order AS order, step.instruction AS instruction
+```
 
 ## `record_message` (write)
 

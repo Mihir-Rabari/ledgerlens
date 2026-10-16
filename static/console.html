@@ -98,8 +98,9 @@
 <main>
   <div class="col">
     <div class="panel">
-      <h2>Alert queue <span id="alert-count"></span></h2>
-      <div id="alerts"><div class="empty">select a bank…</div></div>
+    <h2>Alert queue <span id="alert-count"></span></h2>
+    <div id="alerts"><div class="empty">select a bank…</div></div>
+    <button class="ghost" style="width:100%;margin-top:4px" onclick="runBench(this)" id="bench-btn">⚡ Stress: 4 parallel investigations across tenants</button>
     </div>
     <div class="panel">
       <h2>Tenant graph</h2>
@@ -126,6 +127,10 @@
     <div class="panel">
       <h2>Cases</h2>
       <div id="cases"><div class="empty">…</div></div>
+    </div>
+    <div class="panel">
+      <h2>Sessions <span style="color:var(--faint);text-transform:none">episodic timeline · handoffs</span></h2>
+      <div id="sessions"><div class="empty">…</div></div>
     </div>
     <div class="panel">
       <h2>Ring view <span style="color:var(--faint);text-transform:none">association graph of involved accounts</span></h2>
@@ -163,7 +168,9 @@ async function loadHealth() {
   try {
     const h = await api('/healthz');
     $('hdot').className = 'dot' + (h.ok ? ' ok' : '');
-    $('htxt').textContent = h.ok ? `FalkorDB ✓ (${h.tenants.length} tenants) · LLM ${h.llm_configured ? '✓' : '✗'}` : 'FalkorDB down';
+    $('htxt').textContent = h.ok
+      ? `FalkorDB ✓ (${h.tenants.length} tenants) · LLM ${h.llm_configured ? '✓' : '✗'}${h.live_feed ? ' · LIVE feed' : ''}`
+      : 'FalkorDB down';
     const sel = $('tenant');
     sel.innerHTML = (h.tenants || []).map(t => `<option ${t === TENANT ? 'selected' : ''}>${esc(t)}</option>`).join('');
     if (!TENANT && h.tenants.length) { TENANT = h.tenants[0]; sel.value = TENANT; }
@@ -172,7 +179,24 @@ async function loadHealth() {
 }
 
 function refreshTenant() {
-  loadAlerts(); loadStats(); loadCases();
+  loadAlerts(); loadStats(); loadCases(); loadSessions();
+}
+
+async function loadSessions() {
+  const r = await api(`/api/tenants/${TENANT}/sessions`);
+  const wrap = $('sessions');
+  wrap.innerHTML = '';
+  if (!r.data.sessions.length) { wrap.innerHTML = '<div class="empty">no sessions yet</div>'; return; }
+  r.data.sessions.slice(0, 10).forEach(s => {
+    const handoff = (s.handed_from && s.handed_from.length)
+      ? `<div style="color:var(--accent2);font-size:11px;font-family:var(--mono)">↳ hands_off from ${esc(s.handed_from[0])}</div>` : '';
+    wrap.appendChild(el(`<div class="case-row">
+      <div class="t" style="font-size:12.5px">${esc(s.agent)} <span style="color:var(--faint);font-family:var(--mono)">${esc(s.id)}</span></div>
+      ${handoff}
+      <div class="m"><span>${esc((s.started_at || '').replace('T',' ').split('+')[0])}</span>
+      <span>📝 ${s.findings} finding(s)</span><span>💬 ${s.messages} msg(s)</span></div>
+    </div>`));
+  });
 }
 
 async function loadStats() {
@@ -215,7 +239,8 @@ async function loadCases() {
 async function openCase(id) {
   const r = await api(`/api/tenants/${TENANT}/case/${id}`);
   const d = r.data;
-  const div = el(`<div class="msg"><div class="q">${esc(d.id)} · ${esc(d.title)} <span class="badge ${esc(d.status)}">${esc(d.status)}</span></div>
+  const div = el(`<div class="msg"><div class="q">${esc(d.id)} · ${esc(d.title)} <span class="badge ${esc(d.status)}">${esc(d.status)}</span>
+      <a href="/api/tenants/${TENANT}/case/${esc(id)}/report" target="_blank" style="float:right;font-size:11.5px">📄 report.md</a></div>
     <div><b>Outcome:</b> ${esc(d.outcome || '—')}</div>
     <div style="margin-top:6px;color:var(--dim)"><b>Findings:</b><br>${(d.findings||[]).map(f => '· ' + esc(f.text)).join('<br>') || '—'}</div>
     <div style="margin-top:6px;color:var(--dim)"><b>Actions:</b><br>${(d.actions||[]).map(a => `· ${esc(a.kind)} @ ${esc(a.at)} — ${esc(a.reason||'')}`).join('<br>') || '—'}</div>
@@ -295,7 +320,7 @@ async function loadRing(r) {
 }
 
 function drawRing(data) {
-  const nodes = data.nodes, edges = data.edges;
+  const nodes = data.nodes, edges = data.edges, transfers = data.transfers || [];
   if (!nodes.length) return;
   const W = 320, H = 250, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 34;
   nodes.forEach((n, i) => {
@@ -305,11 +330,31 @@ function drawRing(data) {
   const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
   const lines = edges.filter(e => byId[e.source] && byId[e.target])
     .map(e => `<line x1="${byId[e.source].x}" y1="${byId[e.source].y}" x2="${byId[e.target].x}" y2="${byId[e.target].y}" stroke="#5a6b8a" stroke-width="1" opacity=".55"/>`).join('');
+  const money = transfers.filter(e => byId[e.source] && byId[e.target])
+    .map(e => `<line x1="${byId[e.source].x}" y1="${byId[e.source].y}" x2="${byId[e.target].x}" y2="${byId[e.target].y}" stroke="#38bdf8" stroke-width="1.8" stroke-dasharray="4 3" opacity=".8"/>`).join('');
   const circles = nodes.map(n => `
     <circle cx="${n.x}" cy="${n.y}" r="13" fill="${n.status === 'frozen' ? '#f87171' : '#34d399'}" stroke="#0b0e14" stroke-width="2"/>
     <text x="${n.x}" y="${n.y + 28}" text-anchor="middle" fill="#8194b5" font-size="9" font-family="ui-monospace,monospace">${n.id.slice(-4)}</text>`).join('');
-  $('ringview').innerHTML = `<svg class="graphviz" viewBox="0 0 ${W} ${H}">${lines}${circles}</svg>`;
+  $('ringview').innerHTML = `<svg class="graphviz" viewBox="0 0 ${W} ${H}">${lines}${money}${circles}</svg>`;
   $('ringlegend').style.display = 'flex';
+}
+
+async function runBench(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⚡ running parallel investigations…'; }
+  const box = $('investigation');
+  $('inv-status').textContent = '· stress bench';
+  box.innerHTML = '<div class="empty">Running 4 parallel investigations across tenants — watch the case list grow…</div>';
+  try {
+    const r = await api('/api/bench', {method: 'POST'});
+    box.innerHTML = '';
+    const rows = (r.results || []).map(x => `<div class="turn"><span class="agent">${esc(x.tenant)}</span><span class="tool">${esc(x.alert_id)}</span><span class="summ">${x.error ? '✗ ' + esc(x.error) : '✓ ' + esc(x.verdict || 'no_case') + ' · ' + esc(x.seconds) + 's · ' + esc(x.tool_calls) + ' tool calls · case ' + esc(x.case_id || '—')}</span></div>`).join('');
+    box.appendChild(el(`<div class="verdict"><div class="head"><span class="agent-name">stress bench</span><span class="shape action">high-concurrency</span><span class="conf">${esc(r.parallelism)} parallel investigations · ${esc(r.wall_seconds)}s wall time</span></div>${rows}</div>`));
+  } catch (e) {
+    box.innerHTML = `<div class="empty">bench failed: ${esc(e.message)}</div>`;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '⚡ Stress: 4 parallel investigations across tenants'; }
+  $('inv-status').textContent = '';
+  loadAlerts(); loadCases(); loadSessions();
 }
 
 async function ask() {
@@ -328,6 +373,8 @@ async function ask() {
     const a = r.answer || {};
     const turns = (r.turns || []).map(t => `<div class="turn ${t.ok ? '' : 'err'}"><span class="tool" style="flex:0 0 175px">${t.ok ? '✓' : '✗'} ${esc(t.tool)}</span><span class="summ">${esc(t.summary || '')}</span></div>`).join('');
     holder.innerHTML = `<div class="q">you asked: ${esc(q)}</div>
+      ${r.recalled && (r.recalled.findings || r.recalled.prior_session)
+        ? `<div style="color:var(--accent2);font-size:11.5px;margin-bottom:6px">🧠 new session — recalled ${esc(r.recalled.findings)} finding(s) from prior sessions${r.recalled.prior_session ? ' · prior chat: ' + esc(r.recalled.prior_session) : ''}</div>` : ''}
       <div>${shapeBadge(a.shape || 'not_in_graph')} <span class="conf">confidence ${esc(a.confidence ?? '—')}</span></div>
       <div style="margin-top:6px">${esc(a.summary || r.answer_text || '')}</div>
       ${turns ? `<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px">${turns}</div>` : ''}`;

@@ -180,6 +180,45 @@ PLAYBOOKS: dict[str, list[dict[str, str]]] = {
     ],
 }
 
+# Compliance policies (synthetic): the "company knowledge" layer — chunked
+# documents in the graph so every agent answer can cite its source.
+POLICY_DOCS: list[dict] = [
+    {
+        "id": "POL-14",
+        "title": "Device association monitoring",
+        "version": "4.2",
+        "effective": "2026-03-01",
+        "chunks": [
+            "A device fingerprint seen on three or more unrelated accounts within 30 days is a primary ring signal: run component detection before any other check.",
+            "Devices previously cited in a closed fraud case are ghost devices: any new account they touch must be treated as ring-adjacent until cleared.",
+            "Device hops across three or more device fingerprints inside 14 days on one account warrant a velocity check on its transfer partners.",
+        ],
+    },
+    {
+        "id": "POL-22",
+        "title": "Structuring detection thresholds",
+        "version": "3.1",
+        "effective": "2026-06-15",
+        "chunks": [
+            "The reporting threshold is 10,000 per transfer in bank currency units. Repeated inbound transfers aggregated between 9,000 and 9,900 per account pair inside 7 days indicate structuring.",
+            "Structuring across multiple sender accounts into one beneficiary is a ring pattern, not a set of isolated incidents: investigate the beneficiary as the hub.",
+            "Single transfers just under threshold with no repetition and no association links are legitimate until memory or associations say otherwise.",
+        ],
+    },
+    {
+        "id": "POL-31",
+        "title": "Freeze authority and escalation matrix",
+        "version": "5.0",
+        "effective": "2026-08-01",
+        "chunks": [
+            "The case investigator may freeze accounts that sit inside an evidenced fraud component (association plus internal money flow). The freeze reason must name the evidence.",
+            "When component evidence shows a hub account, freeze it and escalate in the same action: the freeze contains the funnel, the escalation covers customer impact. Escalation without a freeze leaves the funnel open.",
+            "Never freeze an account on a single high-value transfer alone: without association links, ring membership, or a matching past case, the correct verdict is no action.",
+            "Accounts already frozen from a prior case stay frozen; new ring members joining a recurring structure inherit the escalation path of the original case.",
+        ],
+    },
+]
+
 # Tenant definitions (the seeded banks)
 BANKS: list[dict[str, str]] = [
     {"slug": "aurora", "name": "Aurora Trust", "code": "AUR", "country": "Singapore"},

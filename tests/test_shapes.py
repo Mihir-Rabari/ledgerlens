@@ -19,9 +19,9 @@ def test_not_in_graph_shape_for_unconnected_pair(seeded, truth_aurora):
 
 def test_playbook_name_normalization(seeded):
     res = run_tool(seeded, "aurora", "get_playbook", {"playbook": "rapid_velocity"})
-    assert res["ok"] and len(res["data"]["steps"]) == 6
+    assert res["ok"] and len(res["data"]["steps"]) >= 6  # learned steps may follow the seeded six
     res = run_tool(seeded, "aurora", "get_playbook", {"playbook": "rapid-velocity"})
-    assert res["ok"] and len(res["data"]["steps"]) == 6
+    assert res["ok"] and len(res["data"]["steps"]) >= 6
 
 
 def test_missing_playbook_is_not_in_graph(seeded):

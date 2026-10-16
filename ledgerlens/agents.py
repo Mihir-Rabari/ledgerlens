@@ -31,15 +31,17 @@ from .tools import TOOLS, run_tool
 
 ANALYST_TOOLS = [
     "get_alert", "get_account_profile", "get_account_activity", "find_linked_accounts",
-    "find_rings", "search_memory", "get_playbook", "list_alerts", "get_case",
+    "find_rings", "search_memory", "search_policies", "get_policy_chunks",
+    "get_playbook", "list_alerts", "get_case",
     "explain_connection", "graph_stats", "open_case",
 ]
 
 INVESTIGATOR_TOOLS = [
     "get_alert", "get_account_profile", "get_account_activity", "find_linked_accounts",
     "find_rings", "rank_ring_accounts", "trace_money_path", "money_flow_capacity",
-    "explain_connection", "search_memory", "get_playbook", "get_case",
-    "add_finding", "freeze_account", "escalate_case", "close_case",
+    "explain_connection", "search_memory", "search_policies", "get_policy_chunks",
+    "get_playbook", "get_case",
+    "add_finding", "freeze_account", "escalate_case", "close_case", "learn_lesson",
 ]
 
 ANALYST_SYSTEM = """You are LedgerLens's intake analyst at a bank's financial-crime unit.
@@ -51,7 +53,9 @@ make must come from a tool result you can cite.
 Process (the playbooks in the graph are the SOP — follow them):
 1. get_alert, then get_playbook for its kind, then follow the playbook's steps in order.
 2. Build the evidence: profile, activity, linked accounts, rings, past memory (search_memory).
-3. Decide with discipline:
+3. When a threshold or a rule decides the call (structuring limits, device rules), search_policies
+   and cite the section id (e.g. POL-22-C01) in your verdict.
+4. Decide with discipline:
    - A ring/group with internal money flow + memory matches (or a clear shared-device chain)
      => open_case (this hands off to the investigator) and recommend severity.
    - An isolated, high-value-but-legitimate pattern with no links and no memory matches
@@ -78,10 +82,16 @@ Process:
    or devices? Answers that come from memory must say when they were learned.
 4. Act with evidence (audited writes):
    - freeze_account ONLY for accounts the graph shows inside the ring/funnel — cite the exact
-     evidence in the reason. Never freeze the negative-control-style isolated account.
+     evidence in the reason, and the policy section that grants the authority (search_policies,
+     e.g. POL-31-C01). Never freeze the negative-control-style isolated account.
+   - For the hub: freeze it AND escalate_case in the same action (POL-31: the freeze contains
+     the funnel, the escalation covers customer impact).
    - escalate_case for the hub or anything needing compliance review.
    - add_finding for each conclusion future sessions should remember (link the entities).
    - close_case with an outcome written for fulltext recall by future sessions.
+4. After closing: if this case taught you something the playbook lacked — a signal to check,
+   a tool combination that worked, a false-positive to avoid — record it with learn_lesson
+   so the next investigation starts smarter. One focused lesson is better than three vague ones.
 
 The final message MUST end with a JSON object on its own line:
 {"shape": "with_path" | "from_memory" | "not_in_graph" | "unknown_entity" | "action",
@@ -218,6 +228,8 @@ Rules:
 - Follow connections across data with the tools; do not guess joins.
 - If the answer was already established in a past session (search_memory / get_case), say so
   and attach the date it was learned — answers from memory must carry their learned date.
+- If the question touches a rule or threshold (freezing authority, structuring limits), cite
+  the policy section from search_policies by id and version.
 - If the entities exist but nothing connects them the way the question assumed, say exactly
   that: "the graph does not know this relationship", which is itself a finding.
 - If an entity does not exist, say so; do not run speculative queries.
@@ -229,18 +241,83 @@ The final message MUST end with a JSON object on its own line:
 Be terse. Numbers over adjectives."""
 
 
+_Q_RECENT_SESSIONS = """
+MATCH (s:Session)
+RETURN s.id AS id, s.agent AS agent, s.started_at AS started_at
+ORDER BY s.started_at DESC LIMIT 5
+"""
+
+_Q_RECENT_FINDINGS = """
+MATCH (f:Finding)
+RETURN f.id AS id, f.text AS text, f.at AS at, f.confidence AS confidence
+ORDER BY f.at DESC LIMIT 3
+"""
+
+_Q_PRIOR_ANSWERER_TURNS = """
+MATCH (s:Session {agent: 'graph-answerer'})
+WITH s ORDER BY s.started_at DESC LIMIT 1
+MATCH (s)<-[:SAID_IN]-(m:Message)
+RETURN s.id AS session_id, s.started_at AS started_at, m.role AS role, m.text AS text
+ORDER BY m.at ASC
+"""
+
+
+def _session_recap(conn: LensConnection, tenant: str) -> dict:
+    """What prior sessions left in the graph. Purely graph-sourced — a fresh
+    process with empty memory still gets this, because it never lived in RAM."""
+    sessions = _rows_from(conn, tenant, _Q_RECENT_SESSIONS)
+    findings = _rows_from(conn, tenant, _Q_RECENT_FINDINGS)
+    prior_turns = _rows_from(conn, tenant, _Q_PRIOR_ANSWERER_TURNS)
+    prior = {
+        "session_id": prior_turns[0]["session_id"] if prior_turns else None,
+        "started_at": prior_turns[0]["started_at"] if prior_turns else None,
+        "turns": [{"role": t["role"], "text": (t["text"] or "")[:300]} for t in prior_turns[-6:]],
+    }
+    return {"sessions": sessions, "findings": findings, "prior_answerer": prior}
+
+
+def _rows_from(conn: LensConnection, tenant: str, query: str) -> list[dict]:
+    from .tools import _rows  # local import to avoid a cycle at module load
+
+    return _rows(conn.read(tenant, query))
+
+
 def ask_question(conn: LensConnection, tenant: str, message: str,
                  session_id: str | None = None) -> dict:
-    """One-agent Q&A loop over the read-only tool menu. The console's chat box."""
+    """One-agent Q&A loop over the read-only tool menu. The console's chat box.
+
+    Continuity is graph-sourced: a brand-new session starts with a recap of
+    what earlier sessions left in the graph — recent sessions, the latest
+    findings, and the tail of the previous answerer conversation — so
+    'remembers across sessions' is true even across process restarts.
+    """
+    recap = _session_recap(conn, tenant)
     if session_id is None:
         session_id = _new_session(conn, tenant, "graph-answerer")
     _persist_turn(conn, tenant, session_id, "graph-answerer", "user", message)
+
+    recap_lines = []
+    if recap["findings"]:
+        recap_lines.append("Findings learned recently (with learned dates): " +
+                           " | ".join(f"{f['text'][:120]} (learned {f['at']})" for f in recap["findings"]))
+    if recap["prior_answerer"]["turns"]:
+        tail = " ".join(t["text"][:200] for t in recap["prior_answerer"]["turns"][-4:])
+        recap_lines.append(f"Previous answerer session {recap['prior_answerer']['session_id']} "
+                           f"(started {recap['prior_answerer']['started_at']}) ended with: {tail[:600]}")
+    recap_block = ("Graph memory recap from prior sessions — use it, and say when an answer "
+                   "comes from memory with the date it was learned:\n" + "\n".join(recap_lines)
+                   if recap_lines else "")
+
+    messages = [{"role": "system", "content": ANSWERER_SYSTEM}]
+    if recap_block:
+        messages.append({"role": "system", "content": recap_block})
+    messages.append({"role": "user", "content": message})
+
     holder = InvestigationResult(tenant=tenant, alert_id="", analyst_session_id=session_id)
     final_text, _ = _run_agent_loop(
         conn, tenant, "graph-answerer",
         [n for n in ANALYST_TOOLS if n != "open_case"],
-        [{"role": "system", "content": ANSWERER_SYSTEM},
-         {"role": "user", "content": message}],
+        messages,
         holder,
     )
     parsed = _parse_final_json(final_text) or {
@@ -251,6 +328,11 @@ def ask_question(conn: LensConnection, tenant: str, message: str,
         "session_id": session_id,
         "answer_text": final_text,
         "answer": parsed,
+        "recalled": {
+            "sessions": len(recap["sessions"]),
+            "findings": len(recap["findings"]),
+            "prior_session": recap["prior_answerer"]["session_id"],
+        },
         "turns": [vars(t) for t in holder.turns],
         "transcript": holder.transcript,
     }
@@ -277,8 +359,9 @@ def investigate_alert(conn: LensConnection, tenant: str, alert_id: str) -> Inves
     result.analyst_final = analyst_final
     _persist_turn(conn, tenant, analyst_session, "intake-analyst", "assistant", final_text)
 
-    case_id = next((r.data.get("case_id") for r in result.turns
-                    if r.tool == "open_case" and r.ok and r.data), None)
+    case_turn = next((r for r in result.turns
+                      if r.tool == "open_case" and r.ok and r.data), None)
+    case_id = case_turn.data.get("case_id") if case_turn else None
     if not case_id:
         result.analyst_final = analyst_final or {"shape": "not_in_graph", "verdict": "no_case",
                                                  "confidence": 0.0, "summary": final_text[:500]}
@@ -286,13 +369,16 @@ def investigate_alert(conn: LensConnection, tenant: str, alert_id: str) -> Inves
 
     result.case_id = case_id
     result.handoff = True
-    investigator_session = _new_session(conn, tenant, "case-investigator")
+    # the case's own session (created by open_case) IS the investigator session —
+    # one session per case, and the handoff edge points at it
+    investigator_session = case_turn.data.get("session_id") or _new_session(conn, tenant, "case-investigator")
     result.investigator_session_id = investigator_session
     conn.write(tenant, "MATCH (a:Session {id: $a}), (b:Session {id: $b}) CREATE (a)-[:HANDS_OFF]->(b)",
                {"a": analyst_session, "b": investigator_session})
-    conn.write(tenant, "MATCH (c:Case {id: $c}), (s:Session {id: $s}) "
-                       "CREATE (c)-[:OPENED_IN]->(s)",
-               {"c": case_id, "s": investigator_session})
+    if not case_turn.data.get("session_id"):
+        conn.write(tenant, "MATCH (c:Case {id: $c}), (s:Session {id: $s}) "
+                           "CREATE (c)-[:OPENED_IN]->(s)",
+                   {"c": case_id, "s": investigator_session})
 
     investigator_messages = [
         {"role": "system", "content": INVESTIGATOR_SYSTEM},
