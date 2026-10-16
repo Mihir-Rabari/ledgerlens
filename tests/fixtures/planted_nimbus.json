@@ -1,0 +1,37 @@
+{
+  "tenant": "nimbus",
+  "ring_a": {
+    "hub": "NMB-ACC-0950",
+    "mules": [
+      "NMB-ACC-0961",
+      "NMB-ACC-0962",
+      "NMB-ACC-0963",
+      "NMB-ACC-0964",
+      "NMB-ACC-0965",
+      "NMB-ACC-0966"
+    ],
+    "devices": [
+      "DEV-NMB-0990",
+      "DEV-NMB-0991"
+    ]
+  },
+  "ring_b": {
+    "hub": "NMB-ACC-0970",
+    "senders": [
+      "NMB-ACC-0991",
+      "NMB-ACC-0992",
+      "NMB-ACC-0993",
+      "NMB-ACC-0994",
+      "NMB-ACC-0995"
+    ],
+    "device": "DEV-NMB-0992"
+  },
+  "negative_control": "NMB-ACC-0940",
+  "live_alerts": [
+    "NMB-ALR-001",
+    "NMB-ALR-002",
+    "NMB-ALR-003",
+    "NMB-ALR-004"
+  ],
+  "past_case": "NMB-CAS-001"
+}

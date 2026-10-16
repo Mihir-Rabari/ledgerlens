@@ -1,0 +1,37 @@
+{
+  "tenant": "aurora",
+  "ring_a": {
+    "hub": "AUR-ACC-0950",
+    "mules": [
+      "AUR-ACC-0961",
+      "AUR-ACC-0962",
+      "AUR-ACC-0963",
+      "AUR-ACC-0964",
+      "AUR-ACC-0965",
+      "AUR-ACC-0966"
+    ],
+    "devices": [
+      "DEV-AUR-0990",
+      "DEV-AUR-0991"
+    ]
+  },
+  "ring_b": {
+    "hub": "AUR-ACC-0970",
+    "senders": [
+      "AUR-ACC-0991",
+      "AUR-ACC-0992",
+      "AUR-ACC-0993",
+      "AUR-ACC-0994",
+      "AUR-ACC-0995"
+    ],
+    "device": "DEV-AUR-0992"
+  },
+  "negative_control": "AUR-ACC-0940",
+  "live_alerts": [
+    "AUR-ALR-001",
+    "AUR-ALR-002",
+    "AUR-ALR-003",
+    "AUR-ALR-004"
+  ],
+  "past_case": "AUR-CAS-001"
+}

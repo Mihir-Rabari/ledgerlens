@@ -1,0 +1,37 @@
+{
+  "tenant": "verdant",
+  "ring_a": {
+    "hub": "VRD-ACC-0950",
+    "mules": [
+      "VRD-ACC-0961",
+      "VRD-ACC-0962",
+      "VRD-ACC-0963",
+      "VRD-ACC-0964",
+      "VRD-ACC-0965",
+      "VRD-ACC-0966"
+    ],
+    "devices": [
+      "DEV-VRD-0990",
+      "DEV-VRD-0991"
+    ]
+  },
+  "ring_b": {
+    "hub": "VRD-ACC-0970",
+    "senders": [
+      "VRD-ACC-0991",
+      "VRD-ACC-0992",
+      "VRD-ACC-0993",
+      "VRD-ACC-0994",
+      "VRD-ACC-0995"
+    ],
+    "device": "DEV-VRD-0992"
+  },
+  "negative_control": "VRD-ACC-0940",
+  "live_alerts": [
+    "VRD-ALR-001",
+    "VRD-ALR-002",
+    "VRD-ALR-003",
+    "VRD-ALR-004"
+  ],
+  "past_case": "VRD-CAS-001"
+}
