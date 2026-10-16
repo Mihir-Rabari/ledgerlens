@@ -19,7 +19,7 @@ path it walked is the explanation it owes you.
 
 ## How it thinks
 
-The agent **never writes Cypher**. It picks from a fixed menu of 22 tools; a person wrote the
+The agent **never writes Cypher**. It picks from a fixed menu of 26 tools; a person wrote the
 query inside each one, and arguments are validated against the graph before anything runs.
 Every answer carries one of five shapes, so a demo can never produce a confident sentence
 nobody can check:
@@ -78,6 +78,7 @@ MCP for any client.
 - `GRAPH-MODEL.md` — the full node/edge vocabulary and why it is shaped that way
 - `CYPHER.md` — every query the product depends on, generated from the live tool registry
 - `ARCHITECTURE.md` — the agent loop, the handoff protocol, the honesty rules
+- `BLOG.md` — the build story (hackathon blog-post entry)
 
 ## AI-assistance disclosure
 
