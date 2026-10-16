@@ -10,6 +10,9 @@ and can show the exact hops behind each conclusion.
 Built for the WeMakeDevs × FalkorDB **Graph Hacks 2026** hackathon, entered in **Track 1
 (Agents That Act on Connected Data)** and **Track 2 (Agent Memory and Coordination)**.
 
+- 🎬 **Demo video (3m55s):** [github.com/Mihir-Rabari/ledgerlens/releases/tag/v1.0-demo](https://github.com/Mihir-Rabari/ledgerlens/releases/tag/v1.0-demo)
+- 📝 **Build-story blog post:** [BLOG.md](BLOG.md) (blog-prize entry)
+
 ## Why a graph
 
 "Which accounts are linked to this flagged transaction?" is not a lookup — it is a traversal
