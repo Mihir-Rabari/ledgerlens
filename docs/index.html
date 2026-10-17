@@ -5,30 +5,37 @@
 <meta property="og:title" content="The Alert Was a Relapse — LedgerLens build story">
 <meta property="og:description" content="How a FalkorDB graph became the entire context layer of a fraud-ring investigator: data, memory, and audit trail in one graph per tenant.">
 <style>
-:root { --bg:#0b0f14; --card:#131a21; --cyan:#35e0d2; --faint:#8a95a5; --text:#e2e8f0; }
+:root { --bg:#0b0d11; --card:#171b24; --gold:#e3b34c; --line:#222733; --faint:#9ba3b2; --text:#e7eaf0; }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--bg); color:var(--text); font:16.5px/1.75 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
 .wrap { max-width:820px; margin:0 auto; padding:40px 22px 80px; }
-.badge { color:var(--cyan); font-size:12.5px; letter-spacing:.16em; text-transform:uppercase; }
-h1 { font-size:34px; line-height:1.25; margin:10px 0 6px; }
-h2 { color:var(--cyan); font-size:21px; margin-top:44px; }
+.brand { display:flex; align-items:center; gap:10px; margin-bottom:26px; }
+.brand svg { display:block; }
+.brand .word { font:700 17px Georgia,'Times New Roman',serif; color:var(--text); }
+.brand .word i { font-style:normal; color:var(--gold); }
+.badge { color:var(--gold); font-size:12.5px; letter-spacing:.16em; text-transform:uppercase; }
+h1 { font-family:Georgia,'Times New Roman',serif; font-size:34px; line-height:1.25; margin:10px 0 6px; }
+h2 { color:var(--gold); font-size:21px; margin-top:44px; }
 h3 { font-size:17px; }
-a { color:var(--cyan); }
+a { color:var(--gold); }
 code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:14px; }
-code { background:#1a232c; padding:2px 6px; border-radius:4px; }
-pre { background:#1a232c; padding:14px 16px; border-radius:10px; overflow-x:auto; }
+code { background:#1a1f28; padding:2px 6px; border-radius:4px; }
+pre { background:#1a1f28; border:1px solid var(--line); padding:14px 16px; border-radius:10px; overflow-x:auto; }
 pre code { background:none; padding:0; }
 table { border-collapse:collapse; width:100%; margin:18px 0; }
-th, td { border:1px solid #2a3644; padding:8px 12px; text-align:left; font-size:14.5px; }
-th { color:var(--cyan); }
-blockquote, hr { border-color:#2a3644; }
+th, td { border:1px solid var(--line); padding:8px 12px; text-align:left; font-size:14.5px; }
+th { color:var(--gold); }
+blockquote, hr { border-color:var(--line); }
 .meta { color:var(--faint); font-size:14px; margin-bottom:30px; }
 em { color:var(--faint); }
 </style></head><body><div class="wrap">
-<div class="badge">LedgerLens · WeMakeDevs × FalkorDB Graph Hacks 2026 · blog entry</div>
+<div class="brand">
+<svg width="24" height="24" viewBox="0 0 28 28" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="7.2" stroke="#e3b34c" stroke-width="1.7"/><path d="M17.2 17.2 L23.4 23.4" stroke="#e3b34c" stroke-width="2.4" stroke-linecap="round"/><circle cx="9.5" cy="10" r="1.5" fill="#e3b34c"/><circle cx="14.6" cy="11.4" r="1.5" fill="#e3b34c"/><circle cx="11" cy="14.6" r="1.5" fill="#e3b34c"/><path d="M9.5 10 L14.6 11.4 L11 14.6 Z" stroke="#e3b34c" stroke-width="1" opacity=".55"/></svg>
+<span class="word">Ledger<i>Lens</i></span>
+</div>
+<div class="badge">WeMakeDevs × FalkorDB Graph Hacks 2026 · blog entry</div>
 <h1>The Alert Was a Relapse: Building a Fraud Investigator That Remembers</h1>
 <div class="meta">Mihirkumar Rabari · Track 1 (Agents That Act on Connected Data) + Track 2 (Agent Memory and Coordination) · <a href="https://github.com/Mihir-Rabari/ledgerlens">github.com/Mihir-Rabari/ledgerlens</a></div>
-<h1>The Alert Was a Relapse: Building a Fraud Investigator That Remembers</h1>
 <p><em>My LedgerLens build story for WeMakeDevs × FalkorDB Graph Hacks 2026 — entered in Track 1 (Agents That Act on Connected Data) and Track 2 (Agent Memory and Coordination).</em></p>
 <p>In a live demo run, LedgerLens did the thing I built it for. A shared-device alert lands in the queue. Before touching today's transactions, the case investigator searches investigation memory — and surfaces a case that had been closed eight days earlier: the same ring pattern, overlapping device fingerprints, a full findings trail behind it. Today's alert isn't a new ring. It's a recurrence. The agent says so, cites the old case with the date it was learned, and today's investigation takes a different path than it would have on day one.</p>
 <p>There's no trick behind that moment. No vector store, no sidecar database, no retrieval layer bolted onto a chatbot. The "memory" is a fulltext query over <code>Finding</code> and <code>Case</code> nodes in the same graph that holds the bank's data. LedgerLens is a fraud-ring investigator where one FalkorDB graph per bank is the entire context layer — data, memory, SOPs, and audit trail in a single graph.</p>
@@ -112,5 +119,5 @@ RETURN maxFlow
 <h2>Where it stands</h2>
 <p>Thirty-four pytest tests are green, including the live-LLM agent tests. The seeded banks have planted ground truth (<code>tests/fixtures/planted_&lt;tenant&gt;.json</code>), and the tests assert the tools find exactly what was planted — and nothing that wasn't. FalkorDB is Redis-backed, so concurrency comes free: the demo runs four parallel investigations across the three tenants; the test suite runs 24 parallel reads plus concurrent case/finding writes — no cross-talk, no application-level locks. The MCP server exposes the same tool registry over stdio, so tool selection works from any MCP client, not just the built-in console.</p>
 <p>Next: temporal edges — recurrence needs time, not just pattern — and letting algorithm outputs feed alert prioritization.</p>
-<p>The repo is <a href="https://https://github.com/Mihir-Rabari/ledgerlens">https://github.com/Mihir-Rabari/ledgerlens</a>: clone it, start FalkorDB, <code>python seed.py --wipe</code> the three banks, and the console walks an alert from triage to verdict with the hops behind every conclusion on screen.</p>
+<p>The repo is <a href="https://github.com/Mihir-Rabari/ledgerlens">github.com/Mihir-Rabari/ledgerlens</a>: clone it, start FalkorDB, <code>python seed.py --wipe</code> the three banks, and the console walks an alert from triage to verdict with the hops behind every conclusion on screen.</p>
 </div></body></html>
