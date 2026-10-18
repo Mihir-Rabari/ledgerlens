@@ -20,7 +20,6 @@ nodes in the same graph that holds the bank's data. Data, memory, SOPs, and the 
 trail behind every answer — one graph per tenant, nothing else.
 
 - 🎬 **Demo video:** [github.com/Mihir-Rabari/ledgerlens/releases/tag/v1.0-demo](https://github.com/Mihir-Rabari/ledgerlens/releases/tag/v1.0-demo)
-- 📝 **Build story:** [BLOG.md](BLOG.md)
 
 ## Why a graph
 
@@ -149,7 +148,6 @@ over MCP for any client.
 - `GRAPH-MODEL.md` — the full node/edge vocabulary and why it is shaped that way
 - `CYPHER.md` — every query the product depends on, generated from the live tool registry
 - `ARCHITECTURE.md` — the agent loop, the handoff protocol, the honesty rules
-- `BLOG.md` — the build story
 
 ## AI-assistance transparency
 
