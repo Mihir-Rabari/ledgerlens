@@ -3,8 +3,8 @@
 The same fixed menu the agent uses is exposed over MCP (stdio), so any MCP
 client — Claude Desktop, IDE agents, other teams' agents — can drive the
 investigator with the same discipline: validated arguments, hand-written
-queries, typed answer shapes. Tool selection through MCP is a Track 1 key-focus
-bullet; this is the same registry, not a parallel implementation.
+queries, typed answer shapes. Tool selection through MCP is a first-class
+product goal; this is the same registry, not a parallel implementation.
 
 Run:  python -m ledgerlens.mcp_server
 """

@@ -1,4 +1,4 @@
-"""High-concurrency reads and writes across tenants (Track 2 key focus)."""
+"""High-concurrency reads and writes across tenants (a key product goal)."""
 
 import time
 from concurrent.futures import ThreadPoolExecutor

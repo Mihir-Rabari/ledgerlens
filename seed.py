@@ -1,7 +1,7 @@
 """Synthetic, deterministic multi-tenant seed data for LedgerLens.
 
-Every bank is one isolated FalkorDB graph. All data is synthetic (hackathon
-rule 6: public, synthetic, or your own data only) and generated from a fixed
+Every bank is one isolated FalkorDB graph. All data is synthetic (no real
+persons, accounts, or transactions) and generated from a fixed
 random seed, so any two runs produce the same world up to timestamps.
 
 Each tenant gets:
