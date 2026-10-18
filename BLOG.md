@@ -24,7 +24,7 @@ Three enforcement layers keep the menu honest:
 - **Reads go through one read-only path.** Every read tool runs via `GRAPH.RO_QUERY`, enforced in the runner.
 - **Writes are audited.** `freeze_account` and `escalate_case` create an `Action` node with actor, reason, and timestamp, linked to the case. An investigation leaves a subgraph you can read back.
 
-Freeze reasons and reports must cite policy by section id: the bank's compliance policies are chunked into the graph (`POL-14`, `POL-22`, `POL-31`…), fulltext-searchable alongside findings and playbooks, and the agent fetches exact chunks (`POL-31-C01`) to quote them. An answer with sources, or no answer.
+The agent is instructed to cite policy by section id in every freeze reason and report: the bank's compliance policies are chunked into the graph (`POL-14`, `POL-22`, `POL-31`…), fulltext-searchable alongside findings and playbooks, and it fetches exact chunks (`POL-31-C01`) to quote them. An answer with sources, or no answer.
 
 ## Law two: every answer has a shape
 
@@ -87,7 +87,7 @@ But a Docker image is just layers behind an HTTP API. So I did what a browser do
 
 ## Where it stands
 
-Thirty-four pytest tests are green, including the live-LLM agent tests. The seeded banks have planted ground truth (`tests/fixtures/planted_<tenant>.json`), and the tests assert the tools find exactly what was planted — and nothing that wasn't. FalkorDB is Redis-backed, so concurrency comes free: the demo runs four parallel investigations across the three tenants; the test suite runs 24 parallel reads plus concurrent case/finding writes — no cross-talk, no application-level locks. The MCP server exposes the same tool registry over stdio, so tool selection works from any MCP client, not just the built-in console.
+Forty-four pytest tests are green, including the live-LLM agent tests. The seeded banks have planted ground truth (`tests/fixtures/planted_<tenant>.json`), and the tests assert the tools find exactly what was planted — and nothing that wasn't. FalkorDB is Redis-backed, so concurrency comes free: the demo runs four parallel investigations across the three tenants; the test suite runs 24 parallel reads plus concurrent case/finding writes — no cross-talk, no application-level locks. The MCP server exposes the same tool registry over stdio, so tool selection works from any MCP client, not just the built-in console.
 
 Next: temporal edges — recurrence needs time, not just pattern — and letting algorithm outputs feed alert prioritization.
 
