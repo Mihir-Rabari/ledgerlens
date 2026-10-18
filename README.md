@@ -160,3 +160,7 @@ AI-assisted and what was human-directed.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+*Built for Graph Hacks 2026 — event judges: the submission dossier (tracks, artifacts, walkthrough) lives in [HACKATHON.md](HACKATHON.md).*
