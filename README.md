@@ -19,7 +19,7 @@ layer bolted onto a chatbot. The "memory" is a fulltext query over `Finding` and
 nodes in the same graph that holds the bank's data. Data, memory, SOPs, and the audit
 trail behind every answer — one graph per tenant, nothing else.
 
-- 🎬 **Demo video:** [github.com/Mihir-Rabari/ledgerlens/releases/tag/v2-demo](https://github.com/Mihir-Rabari/ledgerlens/releases/tag/v2-demo)
+- 🎬 **Demo video:** [YouTube — 4m44s narrated walkthrough](https://youtu.be/fzjV2-wHl0s) · [download from GitHub releases](https://github.com/Mihir-Rabari/ledgerlens/releases/tag/v2-demo)
 
 ## Why a graph
 
