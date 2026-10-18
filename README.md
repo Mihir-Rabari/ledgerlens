@@ -7,6 +7,19 @@
 
 **A fraud-ring investigator with a memory — one FalkorDB graph per bank is the entire context layer.**
 
+> 🏆 **Graph Hacks 2026 submission** — WeMakeDevs × FalkorDB · team **95Z5QJ "The Hybrid"** · entering **Track 01: Agents That Act on Connected Data** + **Track 02: Agent Memory and Coordination**
+
+| Submission artifact | Where |
+|---|---|
+| 🌐 **Live demo** | **https://ledgerlens.13.200.31.110.nip.io** — sign in `analyst@aurora` / `ledgerlens123` (admin: `admin@ledgerlens.io`) |
+| 🎬 Demo video (4m44s) | [YouTube — narrated walkthrough](https://youtu.be/fzjV2-wHl0s) · [download](https://github.com/Mihir-Rabari/ledgerlens/releases/tag/v2-demo) |
+| 📋 Judge dossier | [HACKATHON.md](HACKATHON.md) — every rule requirement mapped + a 10-minute walkthrough |
+| ⚡ Cypher queries | [CYPHER.md](CYPHER.md) — every query the product depends on |
+| 🕸 Graph data model | [GRAPH-MODEL.md](GRAPH-MODEL.md) |
+| 🏗 Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| ✍️ Build-story blog | ["I gave a fraud agent no vector store and no Cypher — it remembered anyway"](https://dev.to/mihir-rabari/i-gave-a-fraud-agent-no-vector-store-and-no-cypher-it-remembered-anyway-3e80) |
+| 🤖 AI-assistance disclosure | [AI-DISCLOSURE.md](AI-DISCLOSURE.md) |
+
 An alert lands in the queue. Before touching today's transactions, the case investigator
 searches investigation memory — and surfaces a case that was closed eight days earlier:
 same ring pattern, overlapping device fingerprints, a full findings trail behind it.
@@ -18,8 +31,6 @@ There's no trick behind that moment. No vector store, no sidecar database, no re
 layer bolted onto a chatbot. The "memory" is a fulltext query over `Finding` and `Case`
 nodes in the same graph that holds the bank's data. Data, memory, SOPs, and the audit
 trail behind every answer — one graph per tenant, nothing else.
-
-- 🎬 **Demo video:** [YouTube — 4m44s narrated walkthrough](https://youtu.be/fzjV2-wHl0s) · [download from GitHub releases](https://github.com/Mihir-Rabari/ledgerlens/releases/tag/v2-demo)
 
 ## Why a graph
 
