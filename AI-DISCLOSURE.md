@@ -1,8 +1,7 @@
 # AI-Assistance Disclosure
 
-As required by Graph Hacks rule 11 (and in the spirit of rules 12–13), this
-project was built with AI coding assistance, and the use is disclosed here in
-detail.
+In the spirit of full transparency: this project was built with AI coding
+assistance, and the use is disclosed here in detail.
 
 ## What AI assistance did
 
@@ -19,19 +18,19 @@ detail.
 - **Testing**: the pytest suite was drafted with AI assistance and — critically —
   every test was actually executed against the live FalkorDB instance, and the
   full agent tests were executed against the live LLM endpoint. All green at
-  submission time (see the repo's README "Verification" claims).
+  the time of writing (see the README's measured-run claims).
 
 ## What the human did
 
 - Chose the product direction (fraud-ring investigation with persistent case
-  memory, Tracks 1 + 2), the domain, and the design laws the agent follows.
+  memory), the domain, and the design laws the agent follows.
 - Reviewed the graph model, the tool menu, and the queries the product depends
   on (CYPHER.md exists precisely so this review is possible).
 - Set the honesty rules: fixed tool menu, no model-written Cypher, typed answer
   shapes, negative controls, and the "not in graph is a finding" protocol.
-- Verified the end-to-end behaviour on the seeded banks and owns the submission.
+- Verified the end-to-end behaviour on the seeded banks and owns the project.
 
-## Understanding (rule 12)
+## Understanding
 
 I can explain, without the assistant present:
 
@@ -48,6 +47,6 @@ I can explain, without the assistant present:
 - why FalkorDB is load-bearing: remove it and there is no data layer, no memory,
   no algorithms, no audit trail — nothing the product does survives.
 
-The project would not qualify as "entirely generated without meaningful
-participant contribution": the contribution is the design, the direction, the
+This is not a project "entirely generated without meaningful human
+contribution": the contribution is the design, the direction, the
 verification, and the ownership of every decision above.
