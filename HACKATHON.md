@@ -18,7 +18,7 @@ and Coordination).**
 | README with setup instructions and graph data model | [README](README.md) quickstart · [GRAPH-MODEL.md](GRAPH-MODEL.md) for the full node/edge vocabulary |
 | The Cypher queries and graph algorithms the product depends on | [CYPHER.md](CYPHER.md) — generated from the live tool registry, every query the agent can run |
 | Demo video | [github.com/Mihir-Rabari/ledgerlens/releases/tag/v1.0-demo](https://github.com/Mihir-Rabari/ledgerlens/releases/tag/v1.0-demo) |
-| Live deployment | **https://tries-breeding-unavailable-state.trycloudflare.com** — sign in `analyst@aurora` / `ledgerlens123` (admin: `admin@ledgerlens.io`). Served through a live tunnel; the README quickstart covers full local setup otherwise. |
+| Live deployment | **https://ledgerlens.13.200.31.110.nip.io** — sign in `analyst@aurora` / `ledgerlens123` (admin: `admin@ledgerlens.io`). Self-hosted on a Dokploy-managed VPS: the app + internal FalkorDB run from the repo's own `docker-compose.yml`; the README quickstart covers full local setup otherwise. |
 | The track you are entering | both tracks — mapped below |
 
 ## Track 01 — Agents That Act on Connected Data
