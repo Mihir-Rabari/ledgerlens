@@ -36,6 +36,7 @@ import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ledgerlens.auth import seed_default_users
 from ledgerlens.graph import connection, tenant_graph_name
 from ledgerlens.model import BANKS, PLAYBOOKS, POLICY_DOCS
 
@@ -616,6 +617,12 @@ def main() -> None:
         print(f"[seed] {tenant}: {bank['name']} loaded — {len(b.accounts)} accounts, {len(b.txns)} transactions "
               f"({len(b.transfers)} transfer edges), {len(b.linked)} associations, {len(b.alerts)} alerts, "
               f"{len(b.cases)} cases, {total} nodes")
+
+    seeded = seed_default_users(conn)
+    if seeded:
+        print(f"[seed] demo logins ready (password: ledgerlens123): {', '.join(seeded)}")
+    else:
+        print("[seed] demo users already present — logins unchanged")
 
 
 if __name__ == "__main__":

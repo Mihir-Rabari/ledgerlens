@@ -1,12 +1,29 @@
 # The LedgerLens Graph Model
 
 One graph per bank tenant (`bank_aurora`, `bank_nimbus`, `bank_verdant`) in a
-single FalkorDB instance. Isolation is the graph key: no query can cross
+single FalkorDB instance, plus one `ledgerlens_platform` graph for accounts
+and login audit (below). Isolation is the graph key: no query can cross
 tenants because every handle is `select_graph("bank_<slug>")` and the slug is
 validated against a strict pattern.
 
 The vocabulary below is the single source of truth (`ledgerlens/model.py`);
 the seed (`seed.py`) instantiates it deterministically.
+
+## Platform graph (`ledgerlens_platform`)
+
+There is no sidecar database in LedgerLens — credentials live in the same
+graph server as everything else:
+
+- `(:User {id, username, full_name, tenant, role, password_hash, salt, created_at, last_login_at})`
+  — `role` is `analyst` (pinned to their bank; every tenant-scoped API 403s
+  cross-tenant requests) or `admin` (may switch tenants, runs the stress bench).
+  Passwords are scrypt-hashed with per-user salts (stdlib `hashlib`); sessions
+  are HMAC-SHA256 signed tokens in HttpOnly cookies (stdlib `hmac`) — the auth
+  stack ships zero external dependencies.
+- `(:User)-[:PERFORMED]->(:LoginEvent {id, at, ok, username})` — every login
+  attempt is a graph event, successful or not, so the audit story the product
+  tells about investigations extends to who signed in, when, and whether it
+  worked. The console surfaces this per-user under the account menu.
 
 ## Data (the bank's world)
 

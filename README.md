@@ -60,12 +60,17 @@ uv venv && uv pip install -e ".[dev]"
 cp .env.example .env  # point FALKORDB_* at your instance
 python seed.py --wipe
 
-# 3. Serve the console
+# 3. Serve the app (login screen + authenticated investigator console)
 uvicorn app:app --reload --port 8788
 ```
 
-Console: `http://localhost:8788` — pick a bank, take an alert, watch the investigation walk
-its path. The MCP server (`python -m ledgerlens.mcp_server`) exposes the same tool menu over
+Sign in at `http://localhost:8788` — demo accounts `analyst@aurora` /
+`admin@ledgerlens.io`, password `ledgerlens123` (you can also register your own
+analyst on the login screen). Analysts are pinned to their bank — the backend
+403s any cross-tenant request — while admins can switch banks and run the
+4-way parallel stress bench. Every login attempt lands as a `LoginEvent` node
+in the platform graph; the account menu shows your audit trail.
+The MCP server (`python -m ledgerlens.mcp_server`) exposes the same tool menu over
 MCP for any client.
 
 ## Environment
@@ -75,6 +80,7 @@ MCP for any client.
 | `FALKORDB_HOST` / `FALKORDB_PORT` | `127.0.0.1` / `17287` | FalkorDB instance |
 | `FALKORDB_USERNAME` / `FALKORDB_PASSWORD` | empty | FalkorDB Cloud / auth deployments |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | — | Any OpenAI-compatible endpoint the agent uses |
+| `LL_AUTH_SECRET` | dev default | HMAC secret for session cookies — override in any real deployment |
 
 ## Docs
 

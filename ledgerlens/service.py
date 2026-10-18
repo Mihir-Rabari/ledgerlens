@@ -1,6 +1,9 @@
-"""FastAPI service: the LedgerLens console API + static demo UI.
+"""FastAPI service: the LedgerLens app: authenticated console API + SPA.
 
-Also hosts two demo-only mechanics:
+Sessions are HMAC-signed HttpOnly cookies (ledgerlens/auth.py) backed by
+User nodes in the platform graph; every tenant-scoped route checks the
+session AND that the user's bank matches the requested tenant (admins
+excepted). Also hosts two demo-only mechanics:
 - a live alert feed (optional, LIVE_FEED=1): new synthetic alerts arrive while
   the console is open, showing ingestion + the queue responding in real time;
 - a stress bench endpoint that runs parallel investigations across tenants.
@@ -15,11 +18,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import auth
 from .agents import AgentError, ask_question, investigate_alert
+from .auth import AuthError
 from .config import CONFIG
 from .graph import connection
 from .tools import run_tool, tool_catalog
@@ -42,6 +48,18 @@ class InvestigateRequest(BaseModel):
 class AskRequest(BaseModel):
     message: str
     session_id: str | None = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    full_name: str
+    tenant: str
 
 
 def _now() -> str:
@@ -103,6 +121,61 @@ def create_app() -> FastAPI:
     conn = connection()
     feed_state = {"counter": 0}
 
+    # ---- auth guards ----
+    def require_user(request: Request) -> dict:
+        payload = auth.session_payload(request.cookies.get(auth.SESSION_COOKIE, ""))
+        if not payload:
+            raise HTTPException(status_code=401, detail="sign in required")
+        return payload
+
+    def require_tenant_access(user: dict, tenant: str) -> None:
+        if user["tenant"] != tenant and user["role"] != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail=f"user {user['username']} does not belong to tenant '{tenant}'")
+
+    def require_admin(user: dict) -> None:
+        if user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="admin role required")
+
+    def _set_session_cookie(response: Response, user: dict) -> None:
+        response.set_cookie(auth.SESSION_COOKIE, auth.mint_token(user),
+                            max_age=auth.SESSION_TTL, httponly=True, samesite="lax")
+
+    # ---- auth routes ----
+    @app.post("/api/auth/register")
+    def register(req: RegisterRequest, response: Response) -> dict:
+        try:
+            user = auth.create_user(conn, username=req.username, password=req.password,
+                                    full_name=req.full_name, tenant=req.tenant)
+        except AuthError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        auth.record_signin(conn, user)  # the auto sign-in is an audit event too
+        _set_session_cookie(response, user)
+        return {"user": user}
+
+    @app.post("/api/auth/login")
+    def login(req: LoginRequest, response: Response) -> dict:
+        try:
+            user = auth.verify_login(conn, req.username, req.password)
+        except AuthError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        _set_session_cookie(response, user)
+        return {"user": user}
+
+    @app.post("/api/auth/logout")
+    def logout(response: Response) -> dict:
+        response.delete_cookie(auth.SESSION_COOKIE)
+        return {"ok": True}
+
+    @app.get("/api/me")
+    def me(user: dict = Depends(require_user)) -> dict:
+        return {"user": {k: v for k, v in user.items() if k != "exp"}}
+
+    @app.get("/api/me/logins")
+    def my_logins(user: dict = Depends(require_user)) -> dict:
+        return {"logins": auth.list_login_events(conn, user["username"])}
+
     @app.get("/healthz")
     def healthz() -> dict:
         try:
@@ -118,40 +191,53 @@ def create_app() -> FastAPI:
         return {"tenants": conn.list_tenants()}
 
     @app.get("/api/tenants/{tenant}/stats")
-    def stats(tenant: str) -> dict:
+    def stats(tenant: str, user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
         return run_tool(conn, tenant, "graph_stats", {})
 
     @app.get("/api/tenants/{tenant}/alerts")
-    def alerts(tenant: str, status: str = "open") -> dict:
+    def alerts(tenant: str, status: str = "open",
+               user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
         return run_tool(conn, tenant, "list_alerts", {"status": status})
 
     @app.get("/api/tenants/{tenant}/cases")
-    def cases(tenant: str, status: str = "all") -> dict:
+    def cases(tenant: str, status: str = "all",
+              user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
         return run_tool(conn, tenant, "list_cases", {"status": status})
 
     @app.get("/api/tenants/{tenant}/case/{case_id}")
-    def case(tenant: str, case_id: str) -> dict:
+    def case(tenant: str, case_id: str, user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
         return run_tool(conn, tenant, "get_case", {"case_id": case_id})
 
     @app.get("/api/tenants/{tenant}/case/{case_id}/report")
-    def case_report(tenant: str, case_id: str) -> PlainTextResponse:
+    def case_report(tenant: str, case_id: str,
+                    user: dict = Depends(require_user)) -> PlainTextResponse:
+        require_tenant_access(user, tenant)
         return PlainTextResponse(build_report(conn, tenant, case_id),
                                  media_type="text/markdown; charset=utf-8")
 
     @app.get("/api/tenants/{tenant}/sessions")
-    def sessions(tenant: str) -> dict:
+    def sessions(tenant: str, user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
         return run_tool(conn, tenant, "list_sessions", {})
 
     @app.get("/api/tenants/{tenant}/graph")
-    def graph(tenant: str, ids: str) -> dict:
-        return run_tool(conn, tenant, "component_graph", {"member_ids": [i for i in ids.split(",") if i]})
+    def graph(tenant: str, ids: str, user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
+        return run_tool(conn, tenant, "component_graph",
+                        {"member_ids": [i for i in ids.split(",") if i]})
 
     @app.get("/api/tools")
     def tools() -> dict:
         return {"tools": tool_catalog()}
 
     @app.post("/api/tenants/{tenant}/investigate")
-    def investigate(tenant: str, req: InvestigateRequest) -> dict:
+    def investigate(tenant: str, req: InvestigateRequest,
+                    user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
         try:
             result = investigate_alert(conn, tenant, req.alert_id)
         except AgentError as exc:
@@ -169,15 +255,17 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/tenants/{tenant}/ask")
-    def ask(tenant: str, req: AskRequest) -> dict:
+    def ask(tenant: str, req: AskRequest, user: dict = Depends(require_user)) -> dict:
+        require_tenant_access(user, tenant)
         try:
             return ask_question(conn, tenant, req.message, req.session_id)
         except AgentError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/api/bench")
-    def bench() -> dict:
+    def bench(user: dict = Depends(require_user)) -> dict:
         """Run parallel investigations across tenants — the concurrency demo."""
+        require_admin(user)
         if not CONFIG.llm_ready:
             raise HTTPException(status_code=503, detail="LLM endpoint not configured")
         jobs = []
@@ -211,7 +299,11 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "console.html")
+        return FileResponse(STATIC_DIR / "index.html")
+
+    # SPA assets (no build step — plain ES modules served straight from disk)
+    app.mount("/css", StaticFiles(directory=STATIC_DIR / "css"), name="css")
+    app.mount("/js", StaticFiles(directory=STATIC_DIR / "js"), name="js")
 
     # ---- live feed: new synthetic alerts arrive while the console is open ----
     if LIVE_FEED:

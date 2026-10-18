@@ -16,6 +16,7 @@ from .config import CONFIG
 
 _TENANT_RE = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 TENANT_PREFIX = "bank_"
+PLATFORM_GRAPH = "ledgerlens_platform"
 
 
 def tenant_graph_name(tenant: str) -> str:
@@ -49,6 +50,10 @@ class LensConnection:
     def list_tenants(self) -> list[str]:
         graphs = self.client.execute_command("GRAPH.LIST")
         return sorted(g[len(TENANT_PREFIX) :] for g in graphs if g.startswith(TENANT_PREFIX))
+
+    def system_graph(self) -> Graph:
+        """Platform graph (users + login audit), outside the tenant namespace."""
+        return self.client.select_graph(PLATFORM_GRAPH)
 
     def read(self, tenant: str, query: str, params: dict | None = None):
         """Read path: always GRAPH.RO_QUERY. Tools must never need more than this."""

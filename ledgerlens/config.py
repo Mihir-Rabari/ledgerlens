@@ -11,6 +11,9 @@ class Config:
     falkordb_username: str = os.environ.get("FALKORDB_USERNAME", "")
     falkordb_password: str = os.environ.get("FALKORDB_PASSWORD", "")
 
+    # signs session cookies; override in any real deployment
+    auth_secret: str = os.environ.get("LL_AUTH_SECRET", "ledgerlens-demo-secret-v1")
+
     llm_base_url: str = os.environ.get("LLM_BASE_URL", "")
     llm_api_key: str = os.environ.get("LLM_API_KEY", "")
     llm_model: str = os.environ.get("LLM_MODEL", "glm-5.3")
